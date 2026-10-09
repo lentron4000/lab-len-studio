@@ -1,0 +1,608 @@
+/*!
+ * Sound Toy — Copyright (c) 2026 Lenny Ford, Len Studio (https://len.studio)
+ * MIT License. Keep this notice and credit "Sound Toy by Lenny Ford (len.studio)". See LICENSE.
+ */
+
+/* Layout: the shape fills the screen; one floating control panel at the bottom.
+   Day is ink on white; night (data-night on <html>) follows the canvas into a dusk palette. */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+}
+[hidden] {
+  display: none !important;
+}
+:root {
+  --paper: #ffffff;
+  --ink: #111214;
+  --muted: #6c7078;
+  --line: #e2e3e6;
+  --panel: rgba(255, 255, 255, 0.86);
+  --focus: #2f5fd0;
+  --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --sans: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  color-scheme: light;
+}
+/* Night: the page follows the canvas into the dark */
+:root[data-night] {
+  --paper: #150e27;
+  --ink: #f3eaff;
+  --muted: #a898c8;
+  --line: #34274f;
+  --panel: rgba(21, 14, 39, 0.78);
+  --focus: #ff5fd2;
+  color-scheme: dark;
+}
+html,
+body {
+  height: 100%;
+}
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  overflow: hidden;
+}
+canvas#c {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+  cursor: crosshair;
+}
+.top {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 16px);
+  left: 16px;
+  right: 16px;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 8px 24px;
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+}
+.top .read {
+  justify-self: end;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+/* Len Studio mark: black by day, the studio's own green at night, centred on the header line */
+.brand {
+  --brand: #000000;
+  display: block;
+  height: 15px;
+  color: var(--brand);
+  pointer-events: auto;
+  line-height: 0;
+}
+.brand svg {
+  height: 100%;
+  width: auto;
+  display: block;
+}
+.brand svg [fill]:not([fill='none']) {
+  fill: currentColor;
+}
+.brand svg [stroke]:not([stroke='none']) {
+  stroke: currentColor;
+}
+.brand:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 4px;
+  border-radius: 2px;
+}
+:root[data-night] .brand {
+  --brand: #b7ff9a;
+  filter: drop-shadow(0 0 6px rgba(183, 255, 154, 0.5));
+}
+@media (max-width: 640px) {
+  .top {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    gap: 6px;
+  }
+  .brand {
+    order: -1;
+  }
+  .top .read {
+    justify-self: center;
+    justify-content: center;
+    gap: 14px;
+  }
+  #panel {
+    max-height: 46%;
+  }
+}
+.top h1 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+.top .read {
+  display: flex;
+  gap: 20px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.top .read b {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.tab {
+  position: fixed;
+  z-index: 2;
+  right: max(16px, calc((100% - var(--panel-w, 660px)) / 2 + 12px));
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 16px + var(--panel-h, 0px) - 1px);
+  font: 500 12px var(--sans);
+  color: var(--muted);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-bottom-color: var(--paper);
+  border-radius: 8px 8px 0 0;
+  padding: 6px 10px;
+  cursor: pointer;
+  outline: none !important;
+}
+.tab:hover {
+  color: var(--ink);
+}
+.tab:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.tab kbd {
+  font: 11px var(--mono);
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 0 4px;
+  margin-left: 4px;
+}
+.tab-show {
+  right: 16px;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+  border-radius: 8px;
+  border-bottom-color: var(--line);
+  color: var(--ink);
+}
+.panel {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+  width: min(660px, calc(100% - 32px));
+  display: grid;
+  gap: 0 28px;
+  padding: 14px 16px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  max-height: calc(100% - 150px);
+  overflow-y: auto;
+  overscroll-behavior: contain; /* phones: scroll inside, keep the top of the screen for the shape */
+}
+.group {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  min-width: 0;
+}
+/* Groups stack on phones, then spread into two and three columns so the panel stays short:
+   scene | MIDI over moon | sound. The shape gets whatever height the panel leaves. */
+.panel {
+  grid-template-areas: 'scene' 'midi' 'moon' 'sound';
+}
+.group-scene {
+  grid-area: scene;
+}
+.group-midi {
+  grid-area: midi;
+}
+.group-moon {
+  grid-area: moon;
+}
+.group-pulse {
+  grid-area: sound;
+}
+/* Rules between groups. Spacing is padding and margin rather than row gap so vertical rules join up. */
+.group-midi,
+.group-moon,
+.group-pulse {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+@media (min-width: 780px) {
+  .panel {
+    width: min(1180px, calc(100% - 32px));
+    grid-template-columns: 1fr 1fr;
+    grid-template-areas: 'scene midi' 'scene sound' 'moon sound';
+    grid-template-rows: auto auto 1fr;
+  }
+  .group-midi {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: 0;
+    padding-bottom: 12px;
+  }
+  .group-midi,
+  .group-pulse {
+    padding-left: 28px;
+    border-left: 1px solid var(--line);
+  }
+  .group-pulse {
+    margin-top: 0;
+  }
+}
+@media (min-width: 1200px) {
+  .panel {
+    width: min(1480px, calc(100% - 32px));
+    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-areas: 'scene midi sound' 'scene moon sound';
+    grid-template-rows: auto 1fr;
+  }
+  .group-pulse {
+    padding-top: 0;
+    border-top: 0;
+  }
+  .group-moon {
+    margin-top: 0;
+    padding-left: 28px;
+    border-left: 1px solid var(--line);
+  }
+}
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+}
+.label {
+  font-family: var(--mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+  width: 64px;
+  flex: none;
+}
+.slider {
+  flex: 1 1 260px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.slider span {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink);
+}
+
+input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: 1;
+  min-width: 0;
+  height: 24px;
+  background: transparent;
+  margin: 0;
+}
+input[type='range']::-webkit-slider-runnable-track {
+  height: 2px;
+  background: linear-gradient(90deg, var(--ink) var(--fill, 0%), var(--line) var(--fill, 0%));
+}
+input[type='range']::-moz-range-track {
+  height: 2px;
+  background: var(--line);
+}
+input[type='range']::-moz-range-progress {
+  height: 2px;
+  background: var(--ink);
+}
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--ink);
+  margin-top: -8px;
+  border: 0;
+}
+input[type='range']::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--ink);
+  border: 0;
+}
+input[type='range']:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+
+fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: contents;
+}
+legend {
+  display: none;
+}
+.modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1 1 260px;
+}
+.modes label {
+  position: relative;
+}
+.modes input {
+  position: absolute;
+  opacity: 0;
+  inset: 0;
+  margin: 0;
+  cursor: pointer;
+}
+.modes span {
+  display: inline-block;
+  padding: 5px 11px;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--ink);
+  background: var(--paper);
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s,
+    border-color 0.15s;
+}
+.modes label:hover span {
+  border-color: var(--ink);
+}
+.modes input:checked + span {
+  background: var(--ink);
+  color: var(--paper);
+  border-color: var(--ink);
+}
+.modes input:focus-visible + span {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.desc {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
+  padding-left: 80px;
+  max-width: 62ch;
+}
+.spin-out {
+  font-family: var(--mono);
+  font-size: 12px;
+  min-width: 16ch;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.hit {
+  font: 500 13px var(--sans);
+  padding: 5px 11px;
+  border-radius: 999px;
+  cursor: pointer;
+  border: 1px dashed var(--ink);
+  background: var(--paper);
+  color: var(--ink);
+}
+.hit:active {
+  background: var(--ink);
+  color: var(--paper);
+}
+.hit:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+#midi-status {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.btn[aria-pressed='true'] {
+  background: var(--ink);
+  color: var(--paper);
+}
+.label[data-map]::after,
+.modes span[data-map]::after,
+.hit[data-map]::after {
+  content: attr(data-map);
+  font: 10px var(--mono);
+  letter-spacing: 0;
+  text-transform: none;
+  opacity: 0.7;
+}
+.label[data-map]::after {
+  display: block;
+  margin-top: 2px;
+}
+.modes span[data-map]::after,
+.hit[data-map]::after {
+  margin-left: 6px;
+}
+.learning .slider input[type='range'],
+.learning .modes span,
+.learning .hit {
+  outline: 1px dashed var(--focus);
+  outline-offset: 3px;
+}
+.learning .learn-target,
+.learning .modes span.learn-target {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
+}
+.tempo-ctl {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 12px;
+  flex: 1 1 260px;
+  min-width: 0;
+}
+.tempo-out {
+  font: 500 20px var(--mono);
+  font-variant-numeric: tabular-nums;
+  min-width: 5ch;
+  letter-spacing: -0.02em;
+}
+.tempo-src {
+  font: 12px var(--mono);
+  color: var(--muted);
+  flex: 1 1 10ch;
+  min-width: 0;
+}
+.tempo-btns {
+  display: flex;
+  gap: 6px;
+}
+.tempo-btns .hit {
+  padding: 5px 10px;
+}
+#device {
+  font: 13px var(--sans);
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 8px;
+  max-width: 100%;
+  min-width: 0;
+  flex: 1 1 160px;
+}
+#device:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.lvl {
+  width: 72px;
+  height: 6px;
+  background: var(--line);
+  border-radius: 3px;
+  overflow: hidden;
+  flex: none;
+}
+.lvl i {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--ink);
+}
+#live-status {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+  min-width: 0;
+  overflow-wrap: anywhere;
+  flex: 1 1 100%;
+}
+.bpm {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.bpm i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ink);
+  opacity: 0.12;
+}
+.filectl {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  flex: 1 1 260px;
+  min-width: 0;
+}
+.filectl input[type='file'] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+.filectl input[type='file']:focus-visible + .btn,
+.btn:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.btn {
+  font: 500 13px var(--sans);
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--ink);
+  border-radius: 6px;
+  padding: 5px 11px;
+  cursor: pointer;
+}
+.btn:hover {
+  background: var(--ink);
+  color: var(--paper);
+}
+.btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+  background: var(--paper);
+  color: var(--ink);
+}
+#fname {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+/* Phones: keep labels beside their controls (a row each is too costly) and let controls shrink */
+@media (max-width: 520px) {
+  .row {
+    column-gap: 10px;
+  }
+  .label {
+    width: 54px;
+    letter-spacing: 0.08em;
+  }
+  .slider,
+  .modes,
+  .tempo-ctl,
+  .filectl {
+    flex: 1 1 0;
+  }
+  .modes {
+    gap: 5px;
+  }
+  .modes span,
+  .hit {
+    padding-inline: 9px;
+  }
+  .desc {
+    padding-left: 64px;
+  }
+}

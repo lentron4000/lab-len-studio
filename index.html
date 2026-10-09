@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Sound Toy</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23111214'/%3E%3C/svg%3E"
+    />
+    <meta
+      name="description"
+      content="An audio-reactive particle instrument by Lenny Ford (len.studio): tempo tracking, kick detection and MIDI control driving a particle globe and its moon."
+    />
+    <meta name="author" content="Lenny Ford, Len Studio" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500&display=swap"
+    />
+  </head>
+  <body>
+    <canvas
+      id="c"
+      aria-label="A shape made of particles that reacts to sound. Move the pointer through it to disturb it."
+    ></canvas>
+
+    <div class="top">
+      <h1>Sound Toy</h1>
+      <a
+        class="brand"
+        id="brand"
+        href="https://len.studio"
+        target="_blank"
+        rel="noopener"
+        aria-label="Len Studio"
+        ><svg
+          viewBox="0 0 196 30"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+          aria-hidden="true"
+          focusable="false"
+        >
+          <path d="M0 30V0H25.7316V14.75H58.2981V30H0Z" fill="#B7FF9A" />
+          <path
+            d="M66.82 30V0H123.108V8.09211H92.5515V10.7368H122.404V18.8289H92.5515V21.9079H124.012V30H66.82Z"
+            fill="#B7FF9A"
+          />
+          <path
+            d="M132.978 30V0H167.555L175.495 26.0526V0H196V30H161.524L153.483 3.9079V30H132.978Z"
+            fill="#B7FF9A"
+          /></svg
+      ></a>
+      <div class="read" aria-live="off">
+        <div>ρ <b id="rho">1.00</b></div>
+        <div>E<sub>k</sub> <b id="ek">0.00</b></div>
+        <div>n <b id="nn">0</b></div>
+        <div class="bpm"><i id="beat"></i>bpm <b id="bpm">–</b></div>
+      </div>
+    </div>
+
+    <button class="tab" id="hide-ctl" type="button" aria-controls="panel" aria-expanded="true">
+      Hide controls <kbd>H</kbd>
+    </button>
+    <button
+      class="tab tab-show"
+      id="show-ctl"
+      type="button"
+      aria-controls="panel"
+      aria-expanded="false"
+      hidden
+    >
+      Controls <kbd>H</kbd>
+    </button>
+    <div class="panel" id="panel">
+      <div class="group group-scene">
+        <div class="row">
+          <div class="label" id="state-label">State</div>
+          <div class="slider">
+            <span>Solid</span>
+            <input id="state" type="range" min="0" max="1000" value="500" aria-labelledby="state-label" />
+            <span>Cloud</span>
+          </div>
+        </div>
+        <div class="row">
+          <div class="label">Shape</div>
+          <fieldset>
+            <legend>Shape</legend>
+            <div class="modes" role="radiogroup" aria-label="Shape">
+              <label
+                ><input type="radio" name="shape" id="shape-disc" value="disc" checked /><span
+                  >Disc</span
+                ></label
+              >
+              <label
+                ><input type="radio" name="shape" id="shape-globe" value="globe" /><span>Globe</span></label
+              >
+            </div>
+          </fieldset>
+        </div>
+        <div class="row">
+          <div class="label">Mode</div>
+          <fieldset>
+            <legend>Day or night</legend>
+            <div class="modes" role="radiogroup" aria-label="Day or night">
+              <label
+                ><input type="radio" name="night" id="night-off" value="day" checked /><span>Day</span></label
+              >
+              <label><input type="radio" name="night" id="night-on" value="night" /><span>Night</span></label>
+            </div>
+          </fieldset>
+        </div>
+        <div class="row" id="spin-row" hidden>
+          <div class="label" id="spin-label">Spin</div>
+          <div class="slider">
+            <input id="spin" type="range" min="0" max="8" step="1" value="4" aria-labelledby="spin-label" />
+            <output id="spin-out" class="spin-out" for="spin">4 bars</output>
+          </div>
+        </div>
+        <div class="row">
+          <div class="label">Physics</div>
+          <fieldset>
+            <legend>Physics</legend>
+            <div class="modes" role="radiogroup" aria-label="Physics">
+              <label
+                ><input type="radio" name="mode" id="mode-gas" value="gas" checked /><span>Gas</span></label
+              >
+              <label
+                ><input type="radio" name="mode" id="mode-water" value="water" /><span>Water</span></label
+              >
+              <label
+                ><input type="radio" name="mode" id="mode-attract" value="attract" /><span
+                  >Attract</span
+                ></label
+              >
+              <label
+                ><input type="radio" name="mode" id="mode-repel" value="repel" /><span>Repel</span></label
+              >
+            </div>
+          </fieldset>
+        </div>
+        <p class="desc" id="desc"></p>
+      </div>
+      <div class="group group-midi">
+        <div class="row">
+          <div class="label">MIDI</div>
+          <div class="filectl">
+            <button class="btn" id="midi-connect" type="button">Connect</button>
+            <button class="btn" id="midi-map" type="button" aria-pressed="false" disabled>Map</button>
+            <button class="btn" id="midi-reset" type="button" hidden>Reset map</button>
+            <span id="midi-status">Plug in a controller, then Connect.</span>
+          </div>
+        </div>
+      </div>
+      <div class="group group-moon">
+        <div class="row">
+          <div class="label">Moon</div>
+          <fieldset>
+            <legend>Moon</legend>
+            <div class="modes" role="radiogroup" aria-label="Moon">
+              <label><input type="radio" name="moon" id="moon-off" value="off" /><span>Off</span></label>
+              <label><input type="radio" name="moon" id="moon-on" value="on" checked /><span>On</span></label>
+            </div>
+          </fieldset>
+        </div>
+        <div class="row" id="orbit-row">
+          <div class="label" id="orbit-label">Orbit</div>
+          <div class="slider">
+            <input id="orbit" type="range" min="0" max="8" step="1" value="3" aria-labelledby="orbit-label" />
+            <output id="orbit-out" class="spin-out" for="orbit">8 bars</output>
+          </div>
+        </div>
+        <div class="row" id="force-row">
+          <div class="label" id="force-label">Force</div>
+          <div class="slider">
+            <input id="mforce" type="range" min="0" max="200" value="100" aria-labelledby="force-label" />
+            <output id="force-out" class="spin-out" for="mforce">1.0×</output>
+          </div>
+        </div>
+      </div>
+      <div class="group group-pulse">
+        <div class="row">
+          <div class="label">Source</div>
+          <fieldset>
+            <legend>Audio source</legend>
+            <div class="modes" role="radiogroup" aria-label="Audio source">
+              <label
+                ><input type="radio" name="pulse" id="pulse-off" value="off" checked /><span>Off</span></label
+              >
+              <label
+                ><input type="radio" name="pulse" id="pulse-demo" value="demo" /><span
+                  >Demo · 100</span
+                ></label
+              >
+              <label><input type="radio" name="pulse" id="pulse-file" value="file" /><span>File</span></label>
+              <label
+                ><input type="radio" name="pulse" id="pulse-live" value="live" /><span
+                  >Live input</span
+                ></label
+              >
+            </div>
+          </fieldset>
+        </div>
+        <div class="row" id="file-row" hidden>
+          <div class="label"></div>
+          <div class="filectl">
+            <input type="file" id="file" accept="audio/*" />
+            <label class="btn" for="file">Choose file</label>
+            <button class="btn" id="play" type="button" disabled>Play</button>
+            <span id="fname">No file loaded. MP3, WAV, M4A or OGG.</span>
+          </div>
+        </div>
+        <div class="row" id="live-row" hidden>
+          <div class="label"></div>
+          <div class="filectl">
+            <select id="device" aria-label="Audio input">
+              <option value="">Default input</option>
+            </select>
+            <div class="lvl" title="Input level"><i id="lvl"></i></div>
+            <span id="live-status">Choose an input.</span>
+          </div>
+        </div>
+        <div class="row">
+          <div class="label">Tempo</div>
+          <div class="tempo-ctl">
+            <output id="tempo-out" class="tempo-out" aria-live="off">–</output>
+            <span id="tempo-src" class="tempo-src">No source</span>
+            <span class="tempo-btns">
+              <button class="hit" id="tap" type="button" title="Tap tempo (T)">Tap</button>
+              <button class="hit" id="tempo-half" type="button" aria-label="Halve tempo">½</button>
+              <button class="hit" id="tempo-double" type="button" aria-label="Double tempo">×2</button>
+              <button class="hit" id="tempo-auto" type="button" title="Back to detected tempo" hidden>
+                Auto
+              </button>
+            </span>
+          </div>
+        </div>
+        <div class="row">
+          <div class="label">Pulse</div>
+          <fieldset>
+            <legend>Pulse on</legend>
+            <div class="modes" role="radiogroup" aria-label="Pulse on">
+              <label
+                ><input type="radio" name="pulseon" id="pulseon-kick" value="kick" checked /><span
+                  >Kick</span
+                ></label
+              >
+              <label
+                ><input type="radio" name="pulseon" id="pulseon-beat" value="beat" /><span>Beat</span></label
+              >
+              <button class="hit" id="kick" type="button" title="Fire one kick">Hit</button>
+            </div>
+          </fieldset>
+        </div>
+        <div class="row" id="depth-row">
+          <div class="label" id="depth-label">Depth</div>
+          <div class="slider">
+            <span>Soft</span>
+            <input id="depth" type="range" min="0" max="1000" value="650" aria-labelledby="depth-label" />
+            <span>Hard</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
