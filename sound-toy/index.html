@@ -25,6 +25,7 @@
       id="c"
       aria-label="A shape made of particles that reacts to sound. Move the pointer through it to disturb it."
     ></canvas>
+    <div class="veil" aria-hidden="true"></div>
 
     <div class="top">
       <h1>Sound Toy</h1>
@@ -150,6 +151,17 @@
             <button class="btn" id="midi-map" type="button" aria-pressed="false" disabled>Map</button>
             <button class="btn" id="midi-reset" type="button" hidden>Reset map</button>
             <span id="midi-status">Plug in a controller, then Connect.</span>
+          </div>
+        </div>
+        <div class="row">
+          <div class="label">Show</div>
+          <div class="filectl">
+            <button class="btn" id="fullscreen" type="button" aria-pressed="false">
+              Fullscreen <kbd>F</kbd>
+            </button>
+            <button class="hit" id="blackout" type="button" aria-pressed="false" title="Fade to black (B)">
+              Blackout <kbd>B</kbd>
+            </button>
           </div>
         </div>
       </div>

@@ -11,6 +11,7 @@ import { Renderer } from './render/renderer';
 import { Simulation } from './sim/simulation';
 import { bindControls, createAudioListener, type ControlHost } from './ui/controls';
 import { computeViewport, placePanelTab } from './ui/layout';
+import { ShowMode } from './ui/show';
 
 const STEP_MS = 1000 / 60;
 const MAX_STEPS_PER_FRAME = 3;
@@ -32,6 +33,7 @@ class App implements ControlHost {
   readonly renderer: Renderer;
   pulseOn: 'kick' | 'beat' = 'kick';
 
+  private readonly show = new ShowMode();
   private readonly canvas = byId('c', HTMLCanvasElement);
   private readonly header = document.querySelector<HTMLElement>('.top')!;
   private readonly panel = byId('panel');
@@ -90,6 +92,10 @@ class App implements ControlHost {
     document.documentElement.toggleAttribute('data-night', on);
     byId(on ? 'night-on' : 'night-off', HTMLInputElement).checked = true;
     save(StorageKey.Night, on ? '1' : '');
+  }
+
+  setBare(on: boolean): void {
+    this.show.setBare(on);
   }
 
   relayout(): void {

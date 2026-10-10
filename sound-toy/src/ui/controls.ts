@@ -16,6 +16,8 @@ export interface ControlHost {
   fire(strength: number): void;
   flashBeat(): void;
   setNight(on: boolean): void;
+  /** Controls hidden: clear the screen for projection. */
+  setBare(on: boolean): void;
   relayout(): void;
 }
 
@@ -177,6 +179,7 @@ export function bindControls(host: ControlHost): { refreshTempoLabels: () => voi
     hideBtn.hidden = !open;
     showBtn.hidden = open;
     (open ? hideBtn : showBtn).focus({ preventScroll: true });
+    host.setBare(!open);
     host.relayout();
   };
   hideBtn.addEventListener('click', () => {
