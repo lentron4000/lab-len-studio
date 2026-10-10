@@ -33,9 +33,9 @@ in Chrome or Edge. Safari has no Web MIDI.
 | Source      | Off, demo kick (100 BPM), audio file, or live input.                           |
 | Tempo       | Detected tempo and its source. Tap, ½, ×2; Auto clears overrides.              |
 | Pulse       | Pulse on detected kicks, or on the beat grid (predicted, so it lands on time). |
-| Mode        | Day, or night: neon particles that blink like fireflies over a dusk sky.       |
+| Mode        | Day; night (neon fireflies, dusk sky); ritual (embers, smoke, blood moon).     |
 
-Keyboard: **H** hide controls, **N** night, **T** tap tempo.
+Keyboard: **H** hide controls, **N** cycle day / night / ritual, **T** tap tempo, **F** fullscreen, **B** blackout.
 
 ### Audio sources
 

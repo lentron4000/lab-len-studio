@@ -4,6 +4,7 @@ import type { AudioDevice, AudioEngine, AudioEngineListener, FileState } from '.
 import type { SourceMode, Transport } from '../audio/transport';
 import { byId, isShortcut, paintRange, radios } from '../lib/dom';
 import { DIVISIONS, divisionSeconds } from '../sim/divisions';
+import type { Look } from '../render/renderer';
 import { PHYSICS_MODES, type PhysicsModeId } from '../sim/physics-modes';
 import type { Simulation } from '../sim/simulation';
 
@@ -15,7 +16,7 @@ export interface ControlHost {
   pulseOn: 'kick' | 'beat';
   fire(strength: number): void;
   flashBeat(): void;
-  setNight(on: boolean): void;
+  setLook(look: Look): void;
   /** Controls hidden: clear the screen for projection. */
   setBare(on: boolean): void;
   relayout(): void;
@@ -86,7 +87,7 @@ export function bindControls(host: ControlHost): { refreshTempoLabels: () => voi
     host.relayout();
   });
   onRadio('night', (v) => {
-    host.setNight(v === 'night');
+    host.setLook(v as Look);
   });
 
   const desc = byId('desc');
@@ -190,7 +191,7 @@ export function bindControls(host: ControlHost): { refreshTempoLabels: () => voi
   });
   window.addEventListener('keydown', (e) => {
     if (isShortcut(e, 'h')) setPanel(panel.hidden);
-    else if (isShortcut(e, 'n')) host.setNight(!document.documentElement.hasAttribute('data-night'));
+    else if (isShortcut(e, 'n')) host.setLook(nextLook());
     else if (isShortcut(e, 't')) {
       transport.tap();
       host.flashBeat();
@@ -198,6 +199,13 @@ export function bindControls(host: ControlHost): { refreshTempoLabels: () => voi
   });
 
   refreshTempoLabels();
+
+  /** N cycles day → night → ritual, following whichever radio is checked. */
+  function nextLook(): Look {
+    const looks = radios('night');
+    const i = looks.findIndex((r) => r.checked);
+    return looks[(i + 1) % looks.length].value as Look;
+  }
 
   return { refreshTempoLabels };
 }

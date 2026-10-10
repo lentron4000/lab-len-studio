@@ -20,6 +20,12 @@ export interface Viewport {
 /** Physics constants are tuned at this shape radius and scaled with the real one. */
 const REFERENCE_RADIUS = 230;
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
+/** Speed (px/step at the reference radius) above the resting motion where particles start to glow… */
+const EXCITE_CALM = 0.6;
+/** …and the speed above that where they're fully lit. */
+const EXCITE_FULL = 6;
+/** Per-step fade: about a second to go dark again. */
+const EXCITE_DECAY = Math.exp(-1 / 60 / 0.35);
 /** The camera sits this many shape radii in front of the centre (perspective strength). */
 export const CAMERA_DISTANCE = 4;
 
@@ -40,6 +46,12 @@ export class Simulation {
   readonly sphereX: Float32Array;
   readonly sphereY: Float32Array;
   readonly sphereZ: Float32Array;
+  /**
+   * 0–1 per particle: how stirred up it is. Jumps when a particle moves faster than the mode's
+   * resting motion (pointer, moon, shockwave) and fades back over about a second, like
+   * bioluminescence in water. The ritual look colours by it.
+   */
+  readonly excite: Float32Array;
   readonly pointer = new Pointer();
   readonly moon = new Moon();
 
@@ -93,6 +105,7 @@ export class Simulation {
     this.scatterX = f();
     this.scatterY = f();
     this.scatterZ = f();
+    this.excite = f();
     this.next = new Int32Array(count);
     for (let i = 0; i < count; i++) {
       // Phyllotaxis disc: even density with no rings.
@@ -151,6 +164,7 @@ export class Simulation {
     this.state = this.stateTarget + (1 - this.stateTarget) * this.pulse * this.depth;
     const e = this.state;
     const shock = this.pendingShock * this.depth * (R / 220) * 2.4;
+    const shockGlow = Math.min(1, this.pendingShock * (0.35 + 0.5 * this.depth));
     this.pendingShock = 0;
 
     const scale = R / REFERENCE_RADIUS;
@@ -206,6 +220,11 @@ export class Simulation {
     let ke = 0;
     const zPin = 0.08 * (1 - gw);
     const vmax = 25 * scale;
+    // Excitation: speed above the mode's resting motion at the slider's state (gas always flies; that
+    // alone shouldn't glow, but a kick that heats it should).
+    const calm = mode.speed * this.stateTarget * scale * 1.15 + EXCITE_CALM * scale;
+    const exciteGain = 1 / (EXCITE_FULL * scale);
+    const excite = this.excite;
     for (let i = 0; i < N; i++) {
       // The body spins rigidly; physics runs on top of the rotation.
       if (dM) {
@@ -247,10 +266,13 @@ export class Simulation {
       const oz = z[i];
       if (shock) {
         const od = Math.hypot(ox, oy, oz) || 1;
-        const f = (shock * (0.3 + 0.7 * Math.min(1, od / re))) / od;
+        const rim = 0.3 + 0.7 * Math.min(1, od / re);
+        const f = (shock * rim) / od;
         vx[i] += ox * f;
         vy[i] += oy * f;
         vz[i] += oz * f;
+        // The shockwave lights the shape too, brightest at the rim, in every mode.
+        this.excite[i] = Math.max(this.excite[i], shockGlow * rim);
       }
       if (containK) {
         if (gw < 0.5) {
@@ -376,6 +398,8 @@ export class Simulation {
       y[i] += nvy;
       z[i] += nvz;
       ke += sp2;
+      const stir = Math.min(1, (Math.sqrt(sp2) - calm) * exciteGain);
+      excite[i] = stir > excite[i] ? excite[i] + (stir - excite[i]) * 0.5 : excite[i] * EXCITE_DECAY;
     }
     return ke / N;
   }

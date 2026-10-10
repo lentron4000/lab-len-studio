@@ -90,6 +90,8 @@ export class Tracers {
       night: boolean;
       openness: number;
       lineWidth: number;
+      /** Overall strength; ritual smoke is fainter than night's light trails. */
+      alpha: number;
       flash: Float32Array;
       colourOf: Uint8Array;
       strokes: readonly string[];
@@ -144,7 +146,7 @@ export class Tracers {
       for (let half = 0; half < 2; half++) {
         const j0 = half ? len >> 1 : 0;
         const j1 = half ? len - 1 : len >> 1;
-        ctx.globalAlpha = (level / LEVELS) * (half ? 0.22 : 0.6) * (o.night ? 1 : 0.5);
+        ctx.globalAlpha = (level / LEVELS) * (half ? 0.22 : 0.6) * (o.night ? 1 : 0.5) * o.alpha;
         ctx.beginPath();
         for (const i of list) {
           const base = i * LENGTH;
