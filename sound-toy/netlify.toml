@@ -1,6 +1,8 @@
 # Netlify: set the site's base directory to `sound-toy` (this file is read from there).
+# This branch (halloween) is served at lab.len.studio/ritual/: main proxies /ritual/* to this
+# branch deploy, so assets are built under /ritual/.
 [build]
-  command = "npm run build"
+  command = "npm run build -- --base=/ritual/"
   publish = "dist"
   # Skip deploys when a commit doesn't touch this project (other labs live in the same repo).
   ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- ."
@@ -13,3 +15,9 @@
   for = "/assets/*"
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
+
+# Opened directly (halloween--lslab.netlify.app), /ritual/ paths map back onto this deploy's root.
+[[redirects]]
+  from = "/ritual/*"
+  to = "/:splat"
+  status = 200

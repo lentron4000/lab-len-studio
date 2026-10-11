@@ -12,6 +12,7 @@ import { Simulation } from './sim/simulation';
 import { bindControls, createAudioListener, type ControlHost } from './ui/controls';
 import { computeViewport, placePanelTab } from './ui/layout';
 import { ShowMode } from './ui/show';
+import { bindSummoning } from './ui/summon';
 
 const STEP_MS = 1000 / 60;
 const MAX_STEPS_PER_FRAME = 3;
@@ -71,9 +72,16 @@ class App implements ControlHost {
     byId('nn').textContent = this.sim.count.toLocaleString();
 
     ({ refreshTempoLabels: this.refreshTempoLabels } = bindControls(this));
-    new MidiController(this.panel, this.transport.clock, (velocity) => {
-      this.fire(velocity);
-    });
+    const { onNote, onPressure } = bindSummoning(this.sim);
+    new MidiController(
+      this.panel,
+      this.transport.clock,
+      (velocity) => {
+        this.fire(velocity);
+      },
+      onNote,
+      onPressure,
+    );
     this.setLook(savedLook());
 
     window.addEventListener('resize', () => {

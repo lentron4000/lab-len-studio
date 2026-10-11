@@ -2,10 +2,12 @@
 // SPDX-License-Identifier: MIT. If you use or adapt this, credit "Sound Toy by Lenny Ford (len.studio)".
 import { gaussian, lerp } from '../lib/math';
 import { angularStep } from './divisions';
+import type { FormationId } from './formations';
 import { Moon } from './moon';
 import { PHYSICS_MODES, SOLID, type PhysicsMode } from './physics-modes';
 import { Pointer } from './pointer';
 import { GLOBE_AXIS, rotation, type Mat3 } from './rotation';
+import { Summoning } from './summoning';
 
 /** Where the shape sits on screen, in CSS pixels. */
 export interface Viewport {
@@ -26,6 +28,27 @@ const EXCITE_CALM = 0.6;
 const EXCITE_FULL = 6;
 /** Per-step fade: about a second to go dark again. */
 const EXCITE_DECAY = Math.exp(-1 / 60 / 0.35);
+/**
+ * Repel's beam: drive along it and pull toward its line (at full Force), as a share of home-spring
+ * stiffness × shape radius, and the moon's radial push left over (a share of its magnet).
+ */
+const BEAM_PUSH = 0.9;
+const BEAM_FOCUS = 0.5;
+/** Top of the moon's Force slider. */
+const MOON_FORCE_MAX = 2;
+const BEAM_RESIDUAL = 0.25;
+/** Depth velocity kept per step while the shape is flat. */
+const FLAT_Z_DAMPING = 0.93;
+/** Strongest pad hit: three times a full kick. */
+export const BLAST_MAX = 3;
+/** Hit × Depth at which the vapor blast is complete: the hardest pad at the default Depth. */
+const DRIVE_MAX = 2;
+/** Top of the Depth slider: an ordinary kick there reaches DRIVE_MAX too. */
+export const DEPTH_MAX = DRIVE_MAX;
+/** Keys struck harder than this (0–1) burst apart when released. */
+const RELEASE_BURST_FROM = 0.55;
+/** Formations are drawn at this fraction of the shape radius. */
+const FORMATION_SCALE = 0.92;
 /** The camera sits this many shape radii in front of the centre (perspective strength). */
 export const CAMERA_DISTANCE = 4;
 
@@ -53,12 +76,17 @@ export class Simulation {
    */
   readonly excite: Float32Array;
   readonly pointer = new Pointer();
+  /** Formations summoned from the keys. */
+  readonly summoning: Summoning;
   readonly moon = new Moon();
 
   mode: PhysicsMode = PHYSICS_MODES.gas;
   /** State slider, 0 = solid, 1 = cloud. */
   stateTarget = 0.5;
-  /** How far a pulse pushes the state toward cloud (Depth slider). */
+  /**
+   * Depth slider: multiplies every hit. Up to 1 it sets how far a full kick pushes the state toward
+   * cloud; past 1 (to DEPTH_MAX) even an ordinary kick blasts the shape into vapor.
+   */
   depth = 0.65;
   /** Bars per revolution of the globe; 0 = stopped. */
   spinBars = 4;
@@ -82,8 +110,13 @@ export class Simulation {
   private readonly scatterY: Float32Array;
   private readonly scatterZ: Float32Array;
   private readonly next: Int32Array;
+  /** Scratch: particle offsets from the centre in shape radii, for matching particles to a formation. */
+  private readonly relX: Float32Array;
+  private readonly relY: Float32Array;
   private cellHead = new Int32Array(1);
   private pulse = 0;
+  /** 0–1: how far past a full kick the last hit went. Opens the shape fully and vaporizes it. */
+  private blast = 0;
   private pendingShock = 0;
   private spinAngle = 0;
   private view: Viewport = { width: 1, height: 1, radius: 100, cx: 0, cy: 0 };
@@ -106,6 +139,9 @@ export class Simulation {
     this.scatterY = f();
     this.scatterZ = f();
     this.excite = f();
+    this.summoning = new Summoning(count);
+    this.relX = f();
+    this.relY = f();
     this.next = new Int32Array(count);
     for (let i = 0; i < count; i++) {
       // Phyllotaxis disc: even density with no rings.
@@ -149,9 +185,47 @@ export class Simulation {
     }
   }
 
-  /** A kick or beat: pushes the state toward cloud and sends a shockwave out from the centre. */
+  /**
+   * A key went down: pull the particles into a formation while it's held. Velocity 0–1 sets how
+   * hard they rush in and how large the shape is drawn.
+   */
+  summon(source: string, id: FormationId, isGreat: boolean, velocity: number): void {
+    this.updateOffsets();
+    this.summoning.hold(source, id, isGreat, velocity, this.relX, this.relY);
+  }
+
+  /**
+   * The key came up. If it was the last one, the formation ends the way it was struck: a soft key
+   * dissolves slowly, a hard one bursts apart (into vapor at the very top).
+   */
+  dismiss(source: string): void {
+    this.updateOffsets();
+    const velocity = this.summoning.release(source, this.relX, this.relY);
+    if (velocity !== null && velocity > RELEASE_BURST_FROM) {
+      this.fire(1 + (BLAST_MAX - 1) * ((velocity - RELEASE_BURST_FROM) / (1 - RELEASE_BURST_FROM)) ** 1.5);
+    }
+  }
+
+  private updateOffsets(): void {
+    const { cx, cy } = this.view;
+    const re = this.effectiveRadius();
+    for (let i = 0; i < this.count; i++) {
+      this.relX[i] = (this.x[i] - cx) / re;
+      this.relY[i] = (this.y[i] - cy) / re;
+    }
+  }
+
+  /**
+   * A kick or beat: pushes the state toward cloud and sends a shockwave out from the centre.
+   * Strength 1 is a full kick. Up to BLAST_MAX goes further: the shape opens all the way, its springs
+   * let go and the shockwave blows the particles into a hot mist that condenses back over a second.
+   */
   fire(strength: number): void {
     this.pulse = Math.max(this.pulse, strength);
+    // Drive: the hit scaled by Depth. Past 1 it blasts; a hard pad at the default Depth and an
+    // ordinary kick at full Depth both reach DRIVE_MAX.
+    const drive = strength * this.depth;
+    this.blast = Math.max(this.blast, Math.min(1, Math.max(0, (drive - 1) / (DRIVE_MAX - 1))));
     this.pendingShock = Math.max(this.pendingShock, strength);
   }
 
@@ -161,20 +235,41 @@ export class Simulation {
     const { radius: R, cx, cy, width: W, height: H } = this.view;
 
     this.pulse *= 0.925;
-    this.state = this.stateTarget + (1 - this.stateTarget) * this.pulse * this.depth;
+    this.blast *= 0.965;
+    const blast = this.blast;
+    this.state = this.stateTarget + (1 - this.stateTarget) * Math.min(1, this.pulse * this.depth + blast);
     const e = this.state;
-    const shock = this.pendingShock * this.depth * (R / 220) * 2.4;
-    const shockGlow = Math.min(1, this.pendingShock * (0.35 + 0.5 * this.depth));
+    // In the blast range the shockwave grows much faster than the drive: that's what vaporizes.
+    const drive = this.pendingShock * this.depth;
+    const shock = drive * lerp(1, 7.5, blast) * (R / 220) * 2.4;
+    const shockGlow = Math.min(1, this.pendingShock * 0.35 + drive * 0.5);
     this.pendingShock = 0;
 
+    // A held formation takes over from the mode: a stiff spring to its target, calm damping, and no
+    // thermostat, wall or spin to fight it. `fw` eases in so the swarm accelerates into place.
+    const summoning = this.summoning;
+    summoning.step(this.bpm);
+    // A blast tears a held formation apart for a moment; it re-forms as the blast fades.
+    const held = summoning.weight * summoning.weight * (3 - 2 * summoning.weight);
+    const fw = held * (1 - 0.85 * blast);
+    // Intensity makes a held seal burn: it trembles, swells a little and glows (see the excite floor).
+    const burn = summoning.intensity * fw;
+
     const scale = R / REFERENCE_RADIUS;
-    const k = lerp(SOLID.spring, mode.spring, e) * (1 - (1 - mode.homeWeight) * Math.sqrt(e));
-    const containK = mode.contain * e;
+    const k =
+      lerp(
+        lerp(SOLID.spring, mode.spring, e) * (1 - (1 - mode.homeWeight) * Math.sqrt(e)),
+        summoning.strength,
+        fw,
+      ) *
+      (1 - 0.85 * blast);
+    const containK = mode.contain * e * (1 - fw) * (1 - blast);
     const re = this.effectiveRadius();
     const containR = re * mode.containRadius;
-    const targetSpeed = mode.speed * e * scale;
-    const damping = lerp(SOLID.damping, mode.damping, e);
-    const thermal = lerp(SOLID.thermal, mode.thermal, e) * scale;
+    const targetSpeed = mode.speed * e * scale * (1 - fw);
+    const damping = lerp(lerp(SOLID.damping, mode.damping, e), 0.9, fw);
+    const formR = re * FORMATION_SCALE * (1 + 0.3 * burn);
+    const thermal = (lerp(SOLID.thermal, mode.thermal, e) + burn * 1.5) * scale;
     const scatter = R * 0.2 * e;
 
     // Shape morph and spin.
@@ -186,7 +281,9 @@ export class Simulation {
     this.spinAngle += this.spinSpeed;
     const M = rotation(GLOBE_AXIS, this.spinAngle);
     const dM: Mat3 | null =
-      gw > 0 && Math.abs(this.spinSpeed) > 1e-6 ? rotation(GLOBE_AXIS, this.spinSpeed * gw) : null;
+      gw > 0 && Math.abs(this.spinSpeed) > 1e-6 && fw < 1
+        ? rotation(GLOBE_AXIS, this.spinSpeed * gw * (1 - fw))
+        : null;
     const camera = R * CAMERA_DISTANCE;
 
     // Moon. Gas and water: it displaces fluid (potential flow round a moving sphere) and pushes a bow wave.
@@ -205,8 +302,40 @@ export class Simulation {
     const pressK = (Math.max(k, 0.02) * R * lerp(0.9, 1.5, e) + 1.2 * scale) * moon.presence * moon.force;
     const pressReach2 = (mr * 2.2) ** 2;
     const moonSpeed = Math.hypot(moon.vx, moon.vy, moon.vz) || 1e-6;
-    // In disc mode the moon acts as if it passes through the disc's plane.
-    const zWeight = 0.15 + 0.85 * gw;
+    // In disc mode the moon acts as if it passes through the disc's plane. A held formation is a flat
+    // seal the moon orbits around (true 3D distance), feeling only a little of its pull.
+    const zWeight = lerp(0.15 + 0.85 * gw, 1, fw);
+    const moonGrip = 1 - 0.6 * fw;
+
+    // Repel: the moon presses a beam into the shape, aimed at its centre. Gentle, it's broad and shallow,
+    // like a hand pushed into a balloon; at full Force it narrows and reaches halfway through (the
+    // centre), never further. The push fades out toward that depth, so particles bank up at the end.
+    const beam = mode.alwaysOn && mode.pointerGravity < 0 && moonOn;
+    const beamForce = Math.min(1, moon.force / MOON_FORCE_MAX);
+    let ux = 0;
+    let uy = 0;
+    let uz = 0;
+    let beamEnd = 0;
+    if (beam) {
+      const bx = cx - moon.x;
+      const by = cy - moon.y;
+      const bz = -moon.z * zWeight;
+      const bl = Math.hypot(bx, by, bz) || 1;
+      ux = bx / bl;
+      uy = by / bl;
+      uz = bz / bl;
+      // From the shape's near surface, a third of the way to the centre at the gentlest, all of it at full.
+      beamEnd = bl - re + re * lerp(0.35, 1, beamForce);
+    }
+    const beamFade = re * 0.4;
+    // Sized against the home spring, so the dent goes as deep as Force says whatever the State.
+    const beamOn = Math.min(1, moon.force * 4) * moonGrip;
+    const beamPush = k * re * BEAM_PUSH * lerp(0.6, 1, beamForce) * beamOn;
+    const beamFocus = k * re * BEAM_FOCUS * beamForce * beamOn;
+    const beamWidth = mr * lerp(1.5, 0.75, beamForce);
+    const beamCore2 = beamWidth * beamWidth;
+    const beamCapture = beamWidth * 2;
+    const beamCapture2 = beamCapture * beamCapture;
 
     // Pointer: gravity scales with movement in the fluid modes; poles are always on.
     pointer.step();
@@ -219,6 +348,9 @@ export class Simulation {
 
     let ke = 0;
     const zPin = 0.08 * (1 - gw);
+    // A flat shape (the disc, or a held formation) bleeds off depth motion. Without this, the moon's
+    // nudges in z ring on a frictionless pin: particles bob toward the camera, swelling and glowing.
+    const zDamp = lerp(1, FLAT_Z_DAMPING, Math.max(1 - gw, fw));
     const vmax = 25 * scale;
     // Excitation: speed above the mode's resting motion at the slider's state (gas always flies; that
     // alone shouldn't glow, but a kick that heats it should).
@@ -251,9 +383,15 @@ export class Simulation {
       const shx = (M[0] * sx + M[1] * sy + M[2] * sz) * re;
       const shy = (M[3] * sx + M[4] * sy + M[5] * sz) * re;
       const shz = (M[6] * sx + M[7] * sy + M[8] * sz) * re;
-      const hx = cx + dhx + (shx - dhx) * gw + this.scatterX[i] * scatter;
-      const hy = cy + dhy + (shy - dhy) * gw + this.scatterY[i] * scatter;
-      const hz = shz * gw + this.scatterZ[i] * scatter * gw;
+      let hx = cx + dhx + (shx - dhx) * gw + this.scatterX[i] * scatter;
+      let hy = cy + dhy + (shy - dhy) * gw + this.scatterY[i] * scatter;
+      let hz = shz * gw + this.scatterZ[i] * scatter * gw;
+      if (fw > 0) {
+        // Formations are flat and face the viewer, like a seal on the wall.
+        hx += (cx + summoning.tx[i] * formR - hx) * fw;
+        hy += (cy + summoning.ty[i] * formR - hy) * fw;
+        hz -= hz * fw;
+      }
       let ax = (hx - x[i]) * k;
       let ay = (hy - y[i]) * k;
       let az = (hz - z[i]) * k - z[i] * zPin;
@@ -332,11 +470,34 @@ export class Simulation {
         const m2 = mx * mx + my * my + mz * mz;
         const md = Math.sqrt(m2) || 1e-3;
         if (magnet) {
-          // Gaussian reach: only the cloud under the moon's path responds.
-          const f = (magnet * Math.exp(-m2 / magnetReach2)) / md;
+          // Gaussian reach: only the cloud under the moon's path responds. Repel keeps a little of it
+          // so particles don't sit on the moon; its real force is the beam.
+          const f = ((beam ? magnet * BEAM_RESIDUAL : magnet) * moonGrip * Math.exp(-m2 / magnetReach2)) / md;
           ax += mx * f;
           ay += my * f;
           az += mz * f;
+          if (beam) {
+            // Position along the beam (from the moon) and squared distance from its line.
+            const along = -(mx * ux + my * uy + mz * uz);
+            if (along > -mr && along < beamEnd) {
+              const qx = -mx - along * ux;
+              const qy = -my - along * uy;
+              const qz = -mz - along * uz;
+              const q2 = qx * qx + qy * qy + qz * qz;
+              if (q2 < beamCapture2 * 4) {
+                // Fades in over the moon's radius and out as it nears its full depth.
+                const reach = Math.min(1, (along + mr) / mr) * Math.min(1, (beamEnd - along) / beamFade);
+                const push = beamPush * Math.exp(-q2 / beamCore2) * reach;
+                ax += ux * push;
+                ay += uy * push;
+                az += uz * push;
+                const focus = (beamFocus * Math.exp(-q2 / beamCapture2) * reach) / beamCapture;
+                ax -= qx * focus;
+                ay -= qy * focus;
+                az -= qz * focus;
+              }
+            }
+          }
         } else if (m2 < flowR2 && md > mr * 0.5) {
           // Displaced fluid: pushed ahead, sliding round the sides, closing in behind.
           const nx = -mx / md;
@@ -347,7 +508,7 @@ export class Simulation {
           const ufx = k3 * (3 * un * nx - moon.vx);
           const ufy = k3 * (3 * un * ny - moon.vy);
           const ufz = k3 * (3 * un * nz - moon.vz);
-          const w = Math.min(0.6, 0.5 * moon.force) * (1 - md / flowR);
+          const w = Math.min(0.6, 0.5 * moon.force) * (1 - md / flowR) * moonGrip;
           ax += (ufx - vx[i]) * w;
           ay += (ufy - vy[i]) * w;
           az += (ufz - vz[i]) * w;
@@ -358,7 +519,7 @@ export class Simulation {
           const ny = -my / md;
           const nz = -mz / md;
           const ahead = Math.max(0, (nx * moon.vx + ny * moon.vy + nz * moon.vz) / moonSpeed);
-          const f = pressK * Math.exp(-m2 / pressReach2) * (0.5 + ahead);
+          const f = pressK * moonGrip * Math.exp(-m2 / pressReach2) * (0.5 + ahead);
           ax += nx * f;
           ay += ny * f;
           az += nz * f;
@@ -383,7 +544,7 @@ export class Simulation {
 
       let nvx = (vx[i] + ax) * damping;
       let nvy = (vy[i] + ay) * damping;
-      let nvz = (vz[i] + az) * damping;
+      let nvz = (vz[i] + az) * damping * zDamp;
       const sp2 = nvx * nvx + nvy * nvy + nvz * nvz;
       if (sp2 > vmax * vmax) {
         const f = vmax / Math.sqrt(sp2);
@@ -400,6 +561,7 @@ export class Simulation {
       ke += sp2;
       const stir = Math.min(1, (Math.sqrt(sp2) - calm) * exciteGain);
       excite[i] = stir > excite[i] ? excite[i] + (stir - excite[i]) * 0.5 : excite[i] * EXCITE_DECAY;
+      if (excite[i] < burn * 0.85) excite[i] = burn * 0.85;
     }
     return ke / N;
   }

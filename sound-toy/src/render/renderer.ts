@@ -128,6 +128,7 @@ export class Renderer {
       flash,
       colourOf: ritual ? this.heatOf : this.colourOf,
       strokes: this.strokes[ritual ? 'ritual' : 'night'],
+      motion: ritual ? sim.excite : undefined,
       dayInk: DAY_INK,
     });
 
@@ -230,8 +231,8 @@ export class Renderer {
   }
 
   /**
-   * Day: a black disc. Night: inverted, solid white with a steady soft glow. Ritual: a blood moon,
-   * lit coppery on one side and falling to near black, in a red haze. Always fully opaque.
+   * Day: a black disc. Night: inverted, solid white with a steady soft glow. Ritual: an eclipse,
+   * a black disc in a blood-red corona. Always fully opaque.
    */
   private drawMoon(camera: number): void {
     const { ctx } = this;
@@ -253,11 +254,7 @@ export class Renderer {
       ctx.arc(mx, my, mr * 2.4, 0, Math.PI * 2);
       ctx.fill();
       ctx.globalCompositeOperation = 'source-over';
-      const body = ctx.createRadialGradient(mx - mr * 0.4, my - mr * 0.4, 0, mx, my, mr);
-      body.addColorStop(0, '#c4421e');
-      body.addColorStop(0.55, '#7a0e10');
-      body.addColorStop(1, '#260204');
-      ctx.fillStyle = body;
+      ctx.fillStyle = '#000000';
       ctx.beginPath();
       ctx.arc(mx, my, mr, 0, Math.PI * 2);
       ctx.fill();

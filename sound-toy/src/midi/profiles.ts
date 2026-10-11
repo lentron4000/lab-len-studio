@@ -25,7 +25,7 @@ export const TOGGLES: Record<string, readonly [home: string, other: string]> = {
   'toggle-night': ['night-on', 'night-off'],
 };
 
-/** Akai MPK mini: assumes knobs 1–5 on CC 70–74 and pads bank A on notes 36–43. Use Map if a unit differs. */
+/** Akai MPK mini: assumes knobs 1–6 on CC 70–75 and pads bank A on notes 36–43. Use Map if a unit differs. */
 export const MPK_MINI: ControllerProfile = {
   name: 'Akai MPK mini',
   match: /mpk\s*mini/i,
@@ -35,6 +35,7 @@ export const MPK_MINI: ControllerProfile = {
     'cc:72': 'orbit',
     'cc:73': 'mforce',
     'cc:74': 'depth',
+    'cc:75': 'intensity',
     'note:36': 'mode-gas',
     'note:37': 'mode-water',
     'note:38': 'mode-attract',

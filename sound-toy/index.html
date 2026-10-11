@@ -167,6 +167,27 @@
             </button>
           </div>
         </div>
+        <div class="row">
+          <div class="label">Summon</div>
+          <div class="filectl">
+            <span id="summon-status" aria-live="polite"></span>
+          </div>
+        </div>
+        <div class="row">
+          <div class="label" id="intensity-label">Intensity</div>
+          <div class="slider">
+            <span>Still</span>
+            <input
+              id="intensity"
+              type="range"
+              min="0"
+              max="1000"
+              value="0"
+              aria-labelledby="intensity-label"
+            />
+            <span>Burning</span>
+          </div>
+        </div>
       </div>
       <div class="group group-moon">
         <div class="row">
@@ -272,8 +293,8 @@
           <div class="label" id="depth-label">Depth</div>
           <div class="slider">
             <span>Soft</span>
-            <input id="depth" type="range" min="0" max="1000" value="650" aria-labelledby="depth-label" />
-            <span>Hard</span>
+            <input id="depth" type="range" min="0" max="1000" value="488" aria-labelledby="depth-label" />
+            <span>Vapor</span>
           </div>
         </div>
       </div>
