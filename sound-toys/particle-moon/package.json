@@ -1,16 +1,21 @@
 {
-  "name": "sound-toy",
+  "name": "particle-moon",
   "version": "1.0.0",
   "description": "An audio-reactive particle instrument: tempo tracking, kick detection and MIDI control driving a particle globe and its moon.",
   "author": "Lenny Ford <https://len.studio>",
   "license": "MIT",
   "homepage": "https://len.studio",
   "private": true,
+  "lab": {
+    "title": "Particle Moon",
+    "summary": "A disc or globe of particles that answers the kick, circled by a moon."
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "build:single": "vite build --mode single",
+    "build:ritual": "VITE_LAB_MODE=ritual vite build --mode single --outDir dist-ritual",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",

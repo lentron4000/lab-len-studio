@@ -3,6 +3,7 @@
 import './styles.css';
 import { AudioEngine } from './audio/audio-engine';
 import { Transport } from './audio/transport';
+import { labMode } from './lab-mode';
 import { byId } from './lib/dom';
 import { nowSeconds } from './lib/math';
 import { load, save, StorageKey } from './lib/storage';
@@ -20,10 +21,9 @@ const DEFAULT_BPM = 100;
 
 const LOOK_RADIO: Record<Look, string> = { day: 'night-off', night: 'night-on', ritual: 'night-ritual' };
 
-/** The saved look. Ritual is the default on this branch; '1' is how night used to be saved. */
+/** The look last chosen in len mode (the only mode that can switch); '1' is how night used to be saved. */
 function savedLook(): Look {
   const v = load(StorageKey.Night);
-  if (v === null) return 'ritual';
   if (v === '1' || v === 'night') return 'night';
   return v === 'ritual' ? 'ritual' : 'day';
 }
@@ -42,6 +42,8 @@ class App implements ControlHost {
   readonly transport = new Transport();
   readonly audio = new AudioEngine(this.transport, createAudioListener());
   readonly renderer: Renderer;
+  /** From `?m=`: which look is locked in and whether formations are on. */
+  readonly mode = labMode(location.search, import.meta.env.VITE_LAB_MODE);
   pulseOn: 'kick' | 'beat' = 'kick';
 
   private readonly show = new ShowMode();
@@ -72,7 +74,12 @@ class App implements ControlHost {
     byId('nn').textContent = this.sim.count.toLocaleString();
 
     ({ refreshTempoLabels: this.refreshTempoLabels } = bindControls(this));
-    const { onNote, onPressure } = bindSummoning(this.sim);
+    // Locked modes hide the look switch; formations (and their controls) only where the mode has them.
+    byId('look-row').hidden = this.mode.look !== null;
+    byId('summon-row').hidden = byId('intensity-row').hidden = !this.mode.formations;
+    const { onNote, onPressure } = this.mode.formations
+      ? bindSummoning(this.sim)
+      : { onNote: () => undefined, onPressure: () => undefined };
     new MidiController(
       this.panel,
       this.transport.clock,
@@ -82,7 +89,7 @@ class App implements ControlHost {
       onNote,
       onPressure,
     );
-    this.setLook(savedLook());
+    this.setLook(this.mode.look ?? savedLook());
 
     window.addEventListener('resize', () => {
       this.resize();
@@ -106,12 +113,14 @@ class App implements ControlHost {
   }
 
   setLook(look: Look): void {
+    // A locked mode ignores N, MIDI toggles and anything else asking for another look.
+    if (this.mode.look && look !== this.mode.look) return;
     this.renderer.look = look;
     // Night and ritual share the dark page; ritual then recolours it.
     document.documentElement.toggleAttribute('data-night', look !== 'day');
     document.documentElement.toggleAttribute('data-ritual', look === 'ritual');
     byId(LOOK_RADIO[look], HTMLInputElement).checked = true;
-    save(StorageKey.Night, look);
+    if (!this.mode.look) save(StorageKey.Night, look);
   }
 
   setBare(on: boolean): void {

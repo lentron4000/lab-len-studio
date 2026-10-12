@@ -1,4 +1,4 @@
-# Sound Toy
+# Particle Moon
 
 An audio-reactive particle instrument. A disc or globe of 1,200–2,800 particles opens from a packed solid
 into a cloud, pulses on the kick, spins in time with the music and is disturbed by an orbiting moon. It
@@ -16,11 +16,25 @@ npm ci                # install (see .npmrc for why peer auto-install is off)
 npm run dev           # dev server with hot reload
 npm run build         # static site → dist/ (for labs.len.studio)
 npm run build:single  # one self-contained index.html → dist-single/ (runs from disk)
+npm run build:ritual  # the same, opening in ritual mode → dist-ritual/ (for an offline show)
 npm run check         # typecheck + lint + tests
 ```
 
 Live input and MIDI need a secure context: `localhost`, HTTPS, or the single-file build opened from disk
 in Chrome or Edge. Safari has no Web MIDI.
+
+## Modes
+
+The `m` URL parameter picks a mode, which locks the look:
+
+| URL         | Look and what's on                                                      |
+| ----------- | ----------------------------------------------------------------------- |
+| (none)      | Day.                                                                    |
+| `?m=night`  | Night: neon fireflies over a dusk sky.                                  |
+| `?m=ritual` | Ritual: blood and embers on black, black moon, formations on the keys.  |
+| `?m=len`    | Everything: switch looks with the Mode buttons or **N**, formations on. |
+
+Modes are defined in [`src/lab-mode.ts`](src/lab-mode.ts).
 
 ## Using it
 
@@ -33,9 +47,9 @@ in Chrome or Edge. Safari has no Web MIDI.
 | Source      | Off, demo kick (100 BPM), audio file, or live input.                           |
 | Tempo       | Detected tempo and its source. Tap, ½, ×2; Auto clears overrides.              |
 | Pulse       | Pulse on detected kicks, or on the beat grid (predicted, so it lands on time). |
-| Mode        | Day; night (neon fireflies, dusk sky); ritual (embers, smoke, blood moon).     |
+| Mode        | Day, night or ritual. Shown only in `?m=len`; other modes are locked.          |
 
-Keyboard: **H** hide controls, **N** cycle day / night / ritual, **T** tap tempo, **F** fullscreen, **B** blackout.
+Keyboard: **H** hide controls, **N** cycle day / night / ritual (len mode), **T** tap tempo, **F** fullscreen, **B** blackout.
 
 ### Formations
 

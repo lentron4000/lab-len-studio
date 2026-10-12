@@ -1,0 +1,8 @@
+# lab.len.studio: every project in the repo, built into out/ by scripts/build-lab.mjs.
+# Netlify's base directory for this site must be the repo root (empty).
+[build]
+  command = "node scripts/build-lab.mjs"
+  publish = "out"
+
+[build.environment]
+  NODE_VERSION = "22"
