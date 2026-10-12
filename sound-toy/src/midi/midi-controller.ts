@@ -4,14 +4,19 @@ import type { MidiClock } from '../audio/midi-clock';
 import { byId } from '../lib/dom';
 import { load, save, StorageKey } from '../lib/storage';
 import { describeSource, profileFor, TOGGLES, type MidiMap, type SourceKey } from './profiles';
+import { hitStrength, touch } from './velocity';
 
+const STATUS_NOTE_OFF = 0x80;
 const STATUS_NOTE_ON = 0x90;
+const STATUS_POLY_PRESSURE = 0xa0;
 const STATUS_CC = 0xb0;
+const STATUS_CHANNEL_PRESSURE = 0xd0;
 const SYSTEM = 0xf0;
 
 /**
  * Web MIDI input: maps knobs and pads to panel controls, with a Map mode to reassign them
  * (click a control, then move a knob or hit a pad). MIDI clock is handed to the transport.
+ * Notes not mapped to a control (the keys) are passed on to summon formations.
  */
 export class MidiController {
   private map: MidiMap;
@@ -29,8 +34,12 @@ export class MidiController {
   constructor(
     panel: HTMLElement,
     private readonly clock: MidiClock,
-    /** A pad mapped to "Hit": fires a kick scaled by velocity. */
+    /** A pad mapped to "Hit": fires a kick scaled by velocity, up to a blast (see hitStrength). */
     private readonly onKick: (velocity: number) => void,
+    /** An unmapped note went down (velocity 1–127) or up (0). */
+    private readonly onKey: (note: number, velocity: number) => void,
+    /** Aftertouch (0–127), per key or for the whole channel, from controllers that send it. */
+    private readonly onPressure: (value: number) => void,
   ) {
     this.defaults = profileFor('').map;
     this.map = this.loadMap();
@@ -97,10 +106,18 @@ export class MidiController {
     if (status >= SYSTEM && this.clock.handle(status, d1, d2, e.timeStamp, portName)) return;
 
     const command = status & 0xf0;
+    if (command === STATUS_POLY_PRESSURE || command === STATUS_CHANNEL_PRESSURE) {
+      if (!this.learning) this.onPressure(command === STATUS_POLY_PRESSURE ? d2 : d1);
+      return;
+    }
+    if (command === STATUS_NOTE_OFF || (command === STATUS_NOTE_ON && d2 === 0)) {
+      if (!this.map[`note:${d1}`]) this.onKey(d1, 0);
+      return;
+    }
     let key: SourceKey;
     let isNote = false;
     if (command === STATUS_CC) key = `cc:${d1}`;
-    else if (command === STATUS_NOTE_ON && d2 > 0) {
+    else if (command === STATUS_NOTE_ON) {
       key = `note:${d1}`;
       isNote = true;
     } else return;
@@ -111,13 +128,14 @@ export class MidiController {
     }
     const target = this.map[key];
     if (target) this.apply(target, d2, isNote);
+    else if (isNote) this.onKey(d1, d2);
   }
 
   /** Moves a control the way a user would, so every side effect runs through the normal handlers. */
   private apply(target: string, value: number, isNote: boolean): void {
     const pressed = isNote || value >= 64;
     if (target === 'kick') {
-      if (isNote) this.onKick(0.35 + (0.65 * value) / 127);
+      if (isNote) this.onKick(hitStrength(touch(value)));
       return;
     }
     let id = target;

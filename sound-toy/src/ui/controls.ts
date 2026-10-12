@@ -4,8 +4,18 @@ import type { AudioDevice, AudioEngine, AudioEngineListener, FileState } from '.
 import type { SourceMode, Transport } from '../audio/transport';
 import { byId, isShortcut, paintRange, radios } from '../lib/dom';
 import { DIVISIONS, divisionSeconds } from '../sim/divisions';
+import type { Look } from '../render/renderer';
 import { PHYSICS_MODES, type PhysicsModeId } from '../sim/physics-modes';
-import type { Simulation } from '../sim/simulation';
+import { DEPTH_MAX, type Simulation } from '../sim/simulation';
+
+/** Share of the Depth slider for the ordinary range (0–1); the rest reaches into vapor (to DEPTH_MAX). */
+const DEPTH_KNEE = 0.75;
+
+/** Depth slider (0–1000) → depth. The first three quarters feel as they always did. */
+function depthFromSlider(value: number): number {
+  const t = value / 1000;
+  return t <= DEPTH_KNEE ? t / DEPTH_KNEE : 1 + ((t - DEPTH_KNEE) / (1 - DEPTH_KNEE)) * (DEPTH_MAX - 1);
+}
 
 /** What the panel needs from the app. */
 export interface ControlHost {
@@ -15,7 +25,9 @@ export interface ControlHost {
   pulseOn: 'kick' | 'beat';
   fire(strength: number): void;
   flashBeat(): void;
-  setNight(on: boolean): void;
+  setLook(look: Look): void;
+  /** Controls hidden: clear the screen for projection. */
+  setBare(on: boolean): void;
   relayout(): void;
 }
 
@@ -84,7 +96,7 @@ export function bindControls(host: ControlHost): { refreshTempoLabels: () => voi
     host.relayout();
   });
   onRadio('night', (v) => {
-    host.setNight(v === 'night');
+    host.setLook(v as Look);
   });
 
   const desc = byId('desc');
@@ -166,7 +178,10 @@ export function bindControls(host: ControlHost): { refreshTempoLabels: () => voi
     host.fire(1);
   });
   onInput('depth', (el) => {
-    sim.depth = Number(el.value) / 1000;
+    sim.depth = depthFromSlider(Number(el.value));
+  });
+  onInput('intensity', (el) => {
+    sim.summoning.knob = Number(el.value) / 1000;
   });
 
   // ---- Panel visibility and shortcuts
@@ -177,6 +192,7 @@ export function bindControls(host: ControlHost): { refreshTempoLabels: () => voi
     hideBtn.hidden = !open;
     showBtn.hidden = open;
     (open ? hideBtn : showBtn).focus({ preventScroll: true });
+    host.setBare(!open);
     host.relayout();
   };
   hideBtn.addEventListener('click', () => {
@@ -187,7 +203,7 @@ export function bindControls(host: ControlHost): { refreshTempoLabels: () => voi
   });
   window.addEventListener('keydown', (e) => {
     if (isShortcut(e, 'h')) setPanel(panel.hidden);
-    else if (isShortcut(e, 'n')) host.setNight(!document.documentElement.hasAttribute('data-night'));
+    else if (isShortcut(e, 'n')) host.setLook(nextLook());
     else if (isShortcut(e, 't')) {
       transport.tap();
       host.flashBeat();
@@ -195,6 +211,13 @@ export function bindControls(host: ControlHost): { refreshTempoLabels: () => voi
   });
 
   refreshTempoLabels();
+
+  /** N cycles day → night → ritual, following whichever radio is checked. */
+  function nextLook(): Look {
+    const looks = radios('night');
+    const i = looks.findIndex((r) => r.checked);
+    return looks[(i + 1) % looks.length].value as Look;
+  }
 
   return { refreshTempoLabels };
 }

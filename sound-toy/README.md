@@ -33,9 +33,27 @@ in Chrome or Edge. Safari has no Web MIDI.
 | Source      | Off, demo kick (100 BPM), audio file, or live input.                           |
 | Tempo       | Detected tempo and its source. Tap, ½, ×2; Auto clears overrides.              |
 | Pulse       | Pulse on detected kicks, or on the beat grid (predicted, so it lands on time). |
-| Mode        | Day, or night: neon particles that blink like fireflies over a dusk sky.       |
+| Mode        | Day; night (neon fireflies, dusk sky); ritual (embers, smoke, blood moon).     |
 
-Keyboard: **H** hide controls, **N** night, **T** tap tempo.
+Keyboard: **H** hide controls, **N** cycle day / night / ritual, **T** tap tempo, **F** fullscreen, **B** blackout.
+
+### Formations
+
+Hold a key to pull the particles into a formation; let go and the physics takes it apart. Velocity
+sets how hard they rush in. Hold two keys to layer shapes, such as a circle round a pentagram.
+
+| Key (any octave) | Formation          | Key | Formation    |
+| ---------------- | ------------------ | --- | ------------ |
+| C                | Summoning circle   | C♯  | Trident      |
+| D                | Pentagram          | D♯  | Descent      |
+| E                | Inverted pentagram | F♯  | Horned cross |
+| F                | Hexagram           | G♯  | Coil         |
+| G                | Ouroboros (turns)  | A♯  | Hourglass    |
+| A                | Eye (blinks)       | B   | Gate         |
+
+From middle C up, each shape is drawn inside a double ring. Notes mapped to pads keep their pad
+role. Without a controller, the number row does the same: **1–0**, **−** and **=**, with **Shift** for
+the ringed version.
 
 ### Audio sources
 

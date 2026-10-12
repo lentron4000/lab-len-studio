@@ -7,6 +7,8 @@ const LENGTH = 14;
 const BUDGET = 400;
 /** Brightness levels used to batch strokes. */
 const LEVELS = 4;
+/** Excitation above which a ritual particle trails smoke without spin. */
+const MOTION_FROM = 0.45;
 /** Spin speed (radians per step) at which trails reach full strength. */
 const FULL_SPIN = 0.004;
 
@@ -90,6 +92,10 @@ export class Tracers {
       night: boolean;
       openness: number;
       lineWidth: number;
+      /** Overall strength; ritual smoke is fainter than night's light trails. */
+      alpha: number;
+      /** Ritual: per-particle excitation. Hot, fast particles leave smoke even when nothing spins. */
+      motion?: Float32Array;
       flash: Float32Array;
       colourOf: Uint8Array;
       strokes: readonly string[];
@@ -97,7 +103,7 @@ export class Tracers {
     },
   ): void {
     const span = Math.min(this.frames, LENGTH);
-    if (this.amount > 0.05 && span > 2) this.stroke(ctx, span, opts);
+    if ((this.amount > 0.05 || opts.motion) && span > 2) this.stroke(ctx, span, opts);
     this.head = (this.head + 1) % LENGTH;
   }
 
@@ -105,7 +111,9 @@ export class Tracers {
     const histogram = this.histogram.fill(0);
     for (let i = 0; i < this.count; i++) {
       const flicker = o.night ? Math.max(0, (o.flash[i] - 0.3) / 0.5) : 0;
-      const v = Math.min(1, Math.max(flicker, this.comet[i])) * this.amount * o.openness;
+      let v = Math.min(1, Math.max(flicker, this.comet[i])) * this.amount * o.openness;
+      if (o.motion)
+        v = Math.max(v, Math.max(0, (o.motion[i] - MOTION_FROM) / (1 - MOTION_FROM)) * o.openness);
       this.intensity[i] = v;
       if (v >= 0.05) histogram[Math.min(19, (v * 20) | 0)]++;
     }
@@ -144,7 +152,7 @@ export class Tracers {
       for (let half = 0; half < 2; half++) {
         const j0 = half ? len >> 1 : 0;
         const j1 = half ? len - 1 : len >> 1;
-        ctx.globalAlpha = (level / LEVELS) * (half ? 0.22 : 0.6) * (o.night ? 1 : 0.5);
+        ctx.globalAlpha = (level / LEVELS) * (half ? 0.22 : 0.6) * (o.night ? 1 : 0.5) * o.alpha;
         ctx.beginPath();
         for (const i of list) {
           const base = i * LENGTH;

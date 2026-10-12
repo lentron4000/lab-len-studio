@@ -7,14 +7,26 @@ import { byId } from './lib/dom';
 import { nowSeconds } from './lib/math';
 import { load, save, StorageKey } from './lib/storage';
 import { MidiController } from './midi/midi-controller';
-import { Renderer } from './render/renderer';
+import { type Look, Renderer } from './render/renderer';
 import { Simulation } from './sim/simulation';
 import { bindControls, createAudioListener, type ControlHost } from './ui/controls';
 import { computeViewport, placePanelTab } from './ui/layout';
+import { ShowMode } from './ui/show';
+import { bindSummoning } from './ui/summon';
 
 const STEP_MS = 1000 / 60;
 const MAX_STEPS_PER_FRAME = 3;
 const DEFAULT_BPM = 100;
+
+const LOOK_RADIO: Record<Look, string> = { day: 'night-off', night: 'night-on', ritual: 'night-ritual' };
+
+/** The saved look. Ritual is the default on this branch; '1' is how night used to be saved. */
+function savedLook(): Look {
+  const v = load(StorageKey.Night);
+  if (v === null) return 'ritual';
+  if (v === '1' || v === 'night') return 'night';
+  return v === 'ritual' ? 'ritual' : 'day';
+}
 
 /** Particle count scales with screen area: dense enough to read as solid, light enough for phones. */
 function particleCount(): number {
@@ -32,6 +44,7 @@ class App implements ControlHost {
   readonly renderer: Renderer;
   pulseOn: 'kick' | 'beat' = 'kick';
 
+  private readonly show = new ShowMode();
   private readonly canvas = byId('c', HTMLCanvasElement);
   private readonly header = document.querySelector<HTMLElement>('.top')!;
   private readonly panel = byId('panel');
@@ -59,10 +72,17 @@ class App implements ControlHost {
     byId('nn').textContent = this.sim.count.toLocaleString();
 
     ({ refreshTempoLabels: this.refreshTempoLabels } = bindControls(this));
-    new MidiController(this.panel, this.transport.clock, (velocity) => {
-      this.fire(velocity);
-    });
-    if (load(StorageKey.Night) === '1') this.setNight(true);
+    const { onNote, onPressure } = bindSummoning(this.sim);
+    new MidiController(
+      this.panel,
+      this.transport.clock,
+      (velocity) => {
+        this.fire(velocity);
+      },
+      onNote,
+      onPressure,
+    );
+    this.setLook(savedLook());
 
     window.addEventListener('resize', () => {
       this.resize();
@@ -78,18 +98,24 @@ class App implements ControlHost {
 
   fire(strength: number): void {
     this.sim.fire(strength);
-    if (this.renderer.night) this.renderer.fireflies.wave(strength, nowSeconds());
+    if (this.renderer.look === 'night') this.renderer.fireflies.wave(strength, nowSeconds());
   }
 
   flashBeat(): void {
     this.beatFlash = 1;
   }
 
-  setNight(on: boolean): void {
-    this.renderer.night = on;
-    document.documentElement.toggleAttribute('data-night', on);
-    byId(on ? 'night-on' : 'night-off', HTMLInputElement).checked = true;
-    save(StorageKey.Night, on ? '1' : '');
+  setLook(look: Look): void {
+    this.renderer.look = look;
+    // Night and ritual share the dark page; ritual then recolours it.
+    document.documentElement.toggleAttribute('data-night', look !== 'day');
+    document.documentElement.toggleAttribute('data-ritual', look === 'ritual');
+    byId(LOOK_RADIO[look], HTMLInputElement).checked = true;
+    save(StorageKey.Night, look);
+  }
+
+  setBare(on: boolean): void {
+    this.show.setBare(on);
   }
 
   relayout(): void {

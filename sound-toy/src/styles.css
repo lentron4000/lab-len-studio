@@ -4,7 +4,8 @@
  */
 
 /* Layout: the shape fills the screen; one floating control panel at the bottom.
-   Day is ink on white; night (data-night on <html>) follows the canvas into a dusk palette. */
+   Day is ink on white; night (data-night on <html>) follows the canvas into a dusk palette, and
+   ritual (data-ritual as well) into black. */
 *,
 *::before,
 *::after {
@@ -37,6 +38,15 @@ body {
   --focus: #ff5fd2;
   color-scheme: dark;
 }
+/* Ritual: black, bone text, blood-red accents */
+:root[data-ritual] {
+  --paper: #000000;
+  --ink: #eadfd0;
+  --muted: #8f7469;
+  --line: #2c1214;
+  --panel: rgba(6, 1, 2, 0.82);
+  --focus: #ff3b1f;
+}
 html,
 body {
   height: 100%;
@@ -55,6 +65,49 @@ canvas#c {
   display: block;
   touch-action: none;
   cursor: crosshair;
+}
+/* Blackout (B): fades the shape to black. Sits above the canvas, below the controls. */
+.veil {
+  position: fixed;
+  inset: 0;
+  background: #000;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 1.2s ease;
+}
+.blackout .veil {
+  opacity: 1;
+}
+/* Bare (controls hidden): nothing but the shape. The cursor and Controls button
+   come back for a moment when the pointer moves. */
+.top,
+.btn kbd,
+.hit kbd {
+  color: inherit;
+  border-color: currentColor;
+  opacity: 0.6;
+  margin-left: 2px;
+}
+.hit[aria-pressed='true'] {
+  background: var(--ink);
+  color: var(--paper);
+}
+.tab-show {
+  transition: opacity 0.4s ease;
+}
+.bare .top {
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 0.4s ease,
+    visibility 0s 0.4s;
+}
+.bare:not(.reveal) .tab-show {
+  opacity: 0;
+  pointer-events: none;
+}
+.bare:not(.reveal) canvas#c {
+  cursor: none;
 }
 .top {
   position: fixed;
@@ -103,6 +156,10 @@ canvas#c {
 :root[data-night] .brand {
   --brand: #b7ff9a;
   filter: drop-shadow(0 0 6px rgba(183, 255, 154, 0.5));
+}
+:root[data-ritual] .brand {
+  --brand: var(--muted);
+  filter: none;
 }
 @media (max-width: 640px) {
   .top {
@@ -162,7 +219,9 @@ canvas#c {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
-.tab kbd {
+.tab kbd,
+.btn kbd,
+.hit kbd {
   font: 11px var(--mono);
   color: var(--muted);
   border: 1px solid var(--line);
@@ -420,7 +479,8 @@ legend {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
-#midi-status {
+#midi-status,
+#summon-status {
   font-family: var(--mono);
   font-size: 12px;
   color: var(--muted);
