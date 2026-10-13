@@ -23,10 +23,12 @@ import { Tracers } from './tracers';
 
 const BANDS = 4;
 /** Spinning, each particle is drawn as a streak: its smoothed screen motion over this many frames. */
-const STREAK_FRAMES = 5;
+const STREAK_FRAMES = 7;
 /** Spin speed (radians per step) at which streaks reach full length; longest streak in shape radii. */
-const STREAK_FULL_SPIN = 0.004;
-const STREAK_MAX = 0.2;
+const STREAK_FULL_SPIN = 0.0015;
+const STREAK_MAX = 0.28;
+/** A particle starts to stretch once its streak is this fraction of its own radius. */
+const STREAK_FROM = 0.3;
 /** Glow looks: sprites stamped along a streak, at most. */
 const STREAK_STAMPS = 6;
 /** Extra vibration on particles huddled round an attracting mouse. */
@@ -234,7 +236,7 @@ export class Renderer {
             sx *= streakMax / sl;
             sy *= streakMax / sl;
           }
-          if (sl > r * 0.5) {
+          if (sl > r * STREAK_FROM) {
             // A streak: sprites stamped back along its motion, fading toward the tail.
             const stamps = Math.min(STREAK_STAMPS, Math.ceil(Math.min(sl, streakMax) / r));
             const head = ctx.globalAlpha;
@@ -263,7 +265,11 @@ export class Renderer {
           this.track(i, qx, qy);
           const px = qx + (Math.random() - 0.5) * 2 * jitter * (1 + HUDDLE_BUZZ * huddle[i]);
           const py = qy + (Math.random() - 0.5) * 2 * jitter * (1 + HUDDLE_BUZZ * huddle[i]);
-          if (streak && fade[i] <= 0.02 && Math.hypot(this.velX[i], this.velY[i]) * streak > dot * 0.5) {
+          if (
+            streak &&
+            fade[i] <= 0.02 &&
+            Math.hypot(this.velX[i], this.velY[i]) * streak > dot * STREAK_FROM
+          ) {
             // Stroked as a streak below.
             this.streakX[streaking] = px;
             this.streakY[streaking] = py;
