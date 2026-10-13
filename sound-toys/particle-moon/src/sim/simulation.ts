@@ -39,6 +39,24 @@ const MOON_FORCE_MAX = 2;
 const BEAM_RESIDUAL = 0.25;
 /** Per-step condensing of evaporated particles: back in a few seconds. */
 const VAPOR_DECAY = Math.exp(-1 / 60 / 1.5);
+/**
+ * Gas and water pointer: a solid body (radius in shape radii) the fluid parts round. FLOW_GRIP is how
+ * firmly nearby fluid follows the flow round it; behind, WAKE_DRAG pulls the wake along after it and
+ * eddies sway it sideways (EDDY_SWAY per px/step of pointer speed, EDDY_SPACING body radii apart,
+ * travelling at EDDY_RATE radians per step). Evaporated gas is flung sideways VAPOR_FLING × speed.
+ */
+const BODY_RADIUS = 0.08;
+/** Share of the hold home the fluid lets go of where the body passes (near it and in its wake). */
+const FLUID_GIVE = 0.9;
+const FLOW_GRIP = 0.6;
+const WAKE_DRAG = 0.3;
+const EDDY_SWAY = 0.08;
+const EDDY_SPACING = 2.2;
+const EDDY_RATE = 0.12;
+const VAPOR_FLING = 0.35;
+/** Returning vapour: pull rises by up to RETURN_RAMP× as it closes in, over RETURN_SCALE shape radii. */
+const RETURN_RAMP = 12;
+const RETURN_SCALE = 0.1;
 /** Chance per step that gas under a fast-moving pointer evaporates, and the pointer speed (px/step) for full effect. */
 const POINTER_VAPOR = 0.15;
 const POINTER_VAPOR_SPEED = 18;
@@ -487,6 +505,19 @@ export class Simulation {
     const soft = Math.max(18, R * 0.13);
     const soft2 = soft * soft;
     const wakeR2 = (R * 0.35) ** 2;
+    // Gas and water: the pointer is a solid body moving through the fluid (see the fluid branch below).
+    const fluidPointer = !mode.alwaysOn;
+    const pvx = pointer.vx;
+    const pvy = pointer.vy;
+    const pSpeed = Math.hypot(pvx, pvy);
+    const pux = pSpeed > 1e-3 ? pvx / pSpeed : 0;
+    const puy = pSpeed > 1e-3 ? pvy / pSpeed : 0;
+    const body = Math.max(10, R * BODY_RADIUS);
+    const body2 = body * body;
+    const flowReach = body * 5;
+    // Faster pointer, longer wake (shape radii, capped).
+    const wakeLength = Math.min(R * 1.6, body * (2 + pSpeed * 0.5));
+    const eddyPhase = this.steps * EDDY_RATE;
 
     if (e > 0.02) this.interact(re, e, scale, gw, W, H);
 
@@ -628,8 +659,13 @@ export class Simulation {
         } else {
           // Condensing: pulled home, harder the closer it gets, so it lingers far out and rushes in.
           // Ramps up steeply on approach; Tight pulls harder, Loose lets it linger.
-          const near = 0.1 + d / re;
-          const pull = (VAPOR_RETURN * scale * returnPace * (1 - v / vaporHold + 0.2)) / (near * near);
+          // Exponential ramp: barely a pull far out, rising steeply as it closes in.
+          const pull =
+            VAPOR_RETURN *
+            scale *
+            returnPace *
+            (1 - v / vaporHold + 0.2) *
+            (1 + RETURN_RAMP * Math.exp(-d / (re * RETURN_SCALE)));
           ax += (dx / d) * pull;
           ay += (dy / d) * pull;
         }
@@ -678,8 +714,8 @@ export class Simulation {
           vy[i] = Math.sin(a) * targetSpeed;
         }
       }
-      if (pointer.active) {
-        // The pointer acts where the particle appears on screen (after perspective).
+      if (pointer.active && !fluidPointer) {
+        // Attract and repel: the pointer is a magnetic pole. It acts where the particle appears on screen.
         const ps = camera / (camera - z[i]);
         const dx = pointer.x - (cx + ox * ps);
         const dy = pointer.y - (cy + oy * ps);
@@ -689,12 +725,78 @@ export class Simulation {
         ay += gravity * dy * inv;
         if (d2 < wakeR2) {
           const w = mode.pointerWake * pointerScale * (1 - d2 / wakeR2);
-          ax += pointer.vx * w;
-          ay += pointer.vy * w;
-          // Gas: sweeping through it evaporates what the pointer passes; the wake drags it into a trail.
-          if (sweepVapor && Math.random() < sweepVapor * (1 - d2 / wakeR2)) {
-            vapor[i] = Math.max(vapor[i], 0.5 + 0.4 * Math.random());
+          ax += pvx * w;
+          ay += pvy * w;
+        }
+      } else if (pointer.active) {
+        // Gas and water: the pointer is a solid body moving through the fluid, like a cylinder in a flow
+        // tank. Ahead and alongside, the fluid parts and slides round it (potential flow); it can't pass
+        // through; behind, a wake drags along after it and sheds eddies to alternate sides.
+        const ps = camera / (camera - z[i]);
+        const rx = cx + ox * ps - pointer.x;
+        const ry = cy + oy * ps - pointer.y;
+        const r2 = rx * rx + ry * ry;
+        const r = Math.sqrt(r2) || 1e-3;
+        // The fluid gives way where the body passes: near it and in its wake the hold home lets go, so even
+        // tight water and gas are pushed aside and stirred, then settle back once it has gone by.
+        let give = 0;
+        if (r < flowReach && pSpeed > 0.2) {
+          give = Math.max(give, 1 - r / flowReach);
+          const nx = rx / r;
+          const ny = ry / r;
+          const un = pvx * nx + pvy * ny;
+          const k2 = body2 / Math.max(r2, body2);
+          const w = FLOW_GRIP * pointerScale * (1 - r / flowReach);
+          ax += (k2 * (2 * un * nx - pvx) - vx[i]) * w;
+          ay += (k2 * (2 * un * ny - pvy) - vy[i]) * w;
+        }
+        if (r < body) {
+          // Solid: out to the surface, and no closing speed into it.
+          x[i] += (rx / r) * (body - r);
+          y[i] += (ry / r) * (body - r);
+          const vn = (vx[i] - pvx) * (rx / r) + (vy[i] - pvy) * (ry / r);
+          if (vn < 0) {
+            vx[i] -= vn * (rx / r);
+            vy[i] -= vn * (ry / r);
           }
+        }
+        // Wake: behind the body (along its path), within a band that widens as it trails off.
+        const behind = -(rx * pux + ry * puy);
+        const side = rx * -puy + ry * pux;
+        if (pSpeed > 0.5 && behind > 0 && behind < wakeLength) {
+          const width = body * (1.2 + behind / body / 6);
+          if (Math.abs(side) < width * 1.5) {
+            const fall = 1 - behind / wakeLength;
+            const core = Math.exp(-((side / width) ** 2));
+            give = Math.max(give, fall * core);
+            // Dragged along after the body, strongest close behind.
+            const drag = WAKE_DRAG * pointerScale * fall * core;
+            ax += (pvx - vx[i]) * drag;
+            ay += (pvy - vy[i]) * drag;
+            // Eddies: a sideways sway that alternates down the wake and travels with it.
+            const sway =
+              EDDY_SWAY *
+              pointerScale *
+              pSpeed *
+              fall *
+              core *
+              Math.min(1, behind / (body * 2)) *
+              Math.sin((behind / (body * EDDY_SPACING)) * Math.PI * 2 - eddyPhase);
+            ax += -puy * sway;
+            ay += pux * sway;
+            // Gas: what the body passes through evaporates; faster sweeps throw the vapour further out.
+            if (sweepVapor && !vapor[i] && Math.random() < sweepVapor * core * fall) {
+              vapor[i] = 0.5 + 0.4 * Math.random();
+              const fling = VAPOR_FLING * pSpeed * Math.sign(side || 1);
+              vx[i] += -puy * fling;
+              vy[i] += pux * fling;
+            }
+          }
+        }
+        if (give) {
+          const g = FLUID_GIVE * pointerScale * Math.min(1, give * 1.5) * Math.min(1, pSpeed / 4);
+          ax += (x[i] - hx) * ki * g;
+          ay += (y[i] - hy) * ki * g;
         }
       }
       if (moonOn) {
