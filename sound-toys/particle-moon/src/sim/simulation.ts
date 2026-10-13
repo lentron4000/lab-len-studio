@@ -46,6 +46,8 @@ const VAPOR_DECAY = Math.exp(-1 / 60 / 1.5);
  * travelling at EDDY_RATE radians per step). Evaporated gas is flung sideways VAPOR_FLING × speed.
  */
 const BODY_RADIUS = 0.08;
+/** Pointer speed (px/step) at which the body reaches full size. */
+const BODY_FULL_SPEED = 12;
 /** Share of the hold home the fluid lets go of where the body passes (near it and in its wake). */
 const FLUID_GIVE = 0.9;
 const FLOW_GRIP = 0.6;
@@ -514,6 +516,8 @@ export class Simulation {
     const puy = pSpeed > 1e-3 ? pvy / pSpeed : 0;
     const body = Math.max(10, R * BODY_RADIUS);
     const body2 = body * body;
+    // Its solid core only exists while it moves: still, it pushes nothing; full size at BODY_FULL_SPEED.
+    const core = body * Math.min(1, pSpeed / BODY_FULL_SPEED);
     const flowReach = body * 5;
     // Faster pointer, longer wake (shape radii, capped).
     const wakeLength = Math.min(R * 1.6, body * (2 + pSpeed * 0.5));
@@ -750,10 +754,10 @@ export class Simulation {
           ax += (k2 * (2 * un * nx - pvx) - vx[i]) * w;
           ay += (k2 * (2 * un * ny - pvy) - vy[i]) * w;
         }
-        if (r < body) {
+        if (core > 1 && r < core) {
           // Solid: out to the surface, and no closing speed into it.
-          x[i] += (rx / r) * (body - r);
-          y[i] += (ry / r) * (body - r);
+          x[i] += (rx / r) * (core - r);
+          y[i] += (ry / r) * (core - r);
           const vn = (vx[i] - pvx) * (rx / r) + (vy[i] - pvy) * (ry / r);
           if (vn < 0) {
             vx[i] -= vn * (rx / r);

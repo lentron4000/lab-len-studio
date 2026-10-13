@@ -23,7 +23,9 @@ function gathered(mode: PhysicsModeId): [before: number, after: number] {
 it('gas and water are not drawn to the pointer; attract still is', () => {
   for (const mode of ['gas', 'water'] as const) {
     const [before, after] = gathered(mode);
+    // Held still, it neither pulls particles in nor pushes them away.
     expect(after).toBeLessThanOrEqual(before + 2);
+    expect(after).toBeGreaterThanOrEqual(before - 2);
   }
   const [before, after] = gathered('attract');
   expect(after).toBeGreaterThan(before * 2);
