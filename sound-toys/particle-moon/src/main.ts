@@ -108,8 +108,9 @@ class App implements ControlHost {
       onPressure,
     );
     this.setLook(this.mode.look ?? savedLook());
-    // Opens with the controls collapsed: just the shape. Moving the pointer shows the Controls button.
-    controls.setPanel(false, false);
+    // Opens with the controls collapsed but the header and Controls button showing. H (or Hide) still
+    // clears everything for projection.
+    controls.setPanel(false, false, false);
 
     window.addEventListener('resize', () => {
       this.resize();

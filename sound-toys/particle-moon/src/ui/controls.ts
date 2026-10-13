@@ -63,7 +63,7 @@ export function createAudioListener(): AudioEngineListener {
  */
 export function bindControls(host: ControlHost): {
   refreshTempoLabels: () => void;
-  setPanel: (open: boolean, focus?: boolean) => void;
+  setPanel: (open: boolean, focus?: boolean, bare?: boolean) => void;
 } {
   const { sim, transport, audio } = host;
   const panel = byId('panel');
@@ -190,12 +190,13 @@ export function bindControls(host: ControlHost): {
   // ---- Panel visibility and shortcuts
   const hideBtn = byId('hide-ctl', HTMLButtonElement);
   const showBtn = byId('show-ctl', HTMLButtonElement);
-  const setPanel = (open: boolean, focus = true): void => {
+  /** `bare` (the default when closing) also clears the header and cursor, for projection. */
+  const setPanel = (open: boolean, focus = true, bare = !open): void => {
     panel.hidden = !open;
     hideBtn.hidden = !open;
     showBtn.hidden = open;
     if (focus) (open ? hideBtn : showBtn).focus({ preventScroll: true });
-    host.setBare(!open);
+    host.setBare(bare);
     host.relayout();
   };
   hideBtn.addEventListener('click', () => {
