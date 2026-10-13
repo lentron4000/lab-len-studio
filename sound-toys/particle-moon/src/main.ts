@@ -95,6 +95,14 @@ class App implements ControlHost {
       this.resize();
     });
     this.resize();
+    // The panel and header change size on their own too: when the web font arrives (text rewraps),
+    // or a status line grows. Follow them so the Hide tab stays on the panel's edge.
+    new ResizeObserver(() => {
+      this.relayout();
+    }).observe(this.panel);
+    new ResizeObserver(() => {
+      this.relayout();
+    }).observe(this.header);
     window.setInterval(() => {
       this.updateTempoReadout();
     }, 100);
