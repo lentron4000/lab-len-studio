@@ -39,8 +39,10 @@ export type Look = 'day' | 'night' | 'ritual';
  */
 export class Renderer {
   look: Look = 'day';
-  /** Only particles below this index are drawn (the opening bloom brings them in). */
+  /** Only particles below this index are drawn (0 hides them all while the loader shows). */
   limit = Infinity;
+  /** During the opening bloom: particles not yet born (1) aren't drawn. */
+  hidden: Uint8Array | null = null;
   readonly fireflies: Fireflies;
   readonly tracers: Tracers;
   readonly embers = new Embers();
@@ -118,7 +120,7 @@ export class Renderer {
     const open = Math.pow(sim.state, 0.7);
     const spacing = R * Math.sqrt(Math.PI / N) * lerp(1, Math.SQRT2, sim.globe);
     // Packed: dots overlap into a solid. Open: small points.
-    const dot = lerp(spacing * 0.9, Math.max(1.15, R / 170), open);
+    const dot = lerp(spacing * 0.81, Math.max(1.15, R / 170), open);
     // Ritual keeps only a trace of the jitter: per-frame wobble is what made it glitter.
     const jitter =
       (0.9 + sim.state * 1.5 * sim.mode.jitter) * (this.reducedMotion ? 0.3 : 1) * (ritual ? 0.25 : 1);
@@ -254,8 +256,10 @@ export class Renderer {
     const { z, moon } = this.sim;
     const count = Math.min(this.sim.count, this.limit);
     const cut = moon.visible ? moon.z : Infinity;
+    const hidden = this.hidden;
     this.bandSize.fill(0);
     for (let i = 0; i < count; i++) {
+      if (hidden?.[i]) continue;
       const t = z[i] / re;
       const depth = t > -0.25 ? 3 : t > -0.55 ? 2 : t > -0.8 ? 1 : 0;
       const b = depth + (z[i] > cut ? BANDS : 0);

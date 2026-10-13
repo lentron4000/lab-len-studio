@@ -150,6 +150,8 @@ class App implements ControlHost {
     }
     const { cx, cy } = this.sim.viewport;
     this.bloom = new Bloom(this.sim, cx, cy);
+    this.renderer.hidden = this.bloom.hidden;
+    this.renderer.limit = Infinity;
     this.bloomStart = performance.now();
   }
 
@@ -163,6 +165,7 @@ class App implements ControlHost {
 
   private endBloom(): void {
     this.bloom = null;
+    this.renderer.hidden = null;
     this.renderer.limit = Infinity;
     this.showUi();
   }
@@ -259,7 +262,7 @@ class App implements ControlHost {
   private advanceBloom(now: number): void {
     if (!this.bloom) return;
     const t = (now - this.bloomStart) / 1000;
-    this.renderer.limit = this.bloom.update(t);
+    this.bloom.update(t);
     // Particles jump from the loader as they're born; don't draw trails across that.
     this.renderer.tracers.reset();
     if (t > BLOOM_SECONDS * UI_REVEAL_AT) this.showUi();
