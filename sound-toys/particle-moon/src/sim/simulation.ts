@@ -62,12 +62,12 @@ const RIPPLE_SWING = 3;
 /** How far a ring lifts what it passes toward the viewer (a bob), relative to its push. */
 const RIPPLE_BOB = 6;
 /** How far a full kick's ripple lifts the particles it passes, in shape radii. */
-const RIPPLE_LIFT = 0.12;
+const RIPPLE_LIFT = 0.17;
 /** Ring width (shape radii), and how much motion it damps as it passes (0–1, per step at its centre). */
 const RIPPLE_WIDTH = 0.35;
 const RIPPLE_SETTLE = 0.25;
-/** Pull back behind the ring, relative to the push in front of it. */
-const RIPPLE_PULL = 0.4;
+/** Pull behind the ring relative to the push in front, balanced so the water doesn't drift outward. */
+const RIPPLE_PULL = 1.3;
 /** A kick's attack: per-frame catch-up of the opening (about four frames to land), and frames its push is spread over. */
 const KICK_ATTACK = 0.45;
 const KICK_STEPS = 4;
@@ -302,7 +302,8 @@ export class Simulation {
     // Gas holds a kick's opening a little longer, so its churn has time to show.
     this.pulse *= lerp(0.925, 0.955, this.mode.vapor);
     this.blast *= 0.965;
-    const blast = this.blast;
+    // Water doesn't blast: a harder hit is a bigger ripple, and the droplets keep their hold so they return.
+    const blast = this.blast * (1 - mode.ripple);
     // A rippling mode doesn't open all at once on a kick; the ripple carries the kick instead.
     // The kick opens the shape over a few frames (attack), then lets go at the usual rate.
     const openTarget = Math.min(1, this.pulse * this.depth * (1 - mode.ripple) + blast);
@@ -509,9 +510,12 @@ export class Simulation {
         const pz = z[i];
         const pd = Math.hypot(px, py, pz) || 1;
         let lift = 0;
+        // Like a real drop, the middle settles quickly and the ring carries the motion outward: lift is
+        // weakest at the centre, so it isn't swept empty on every beat.
+        const rim = 0.2 + 0.8 * Math.min(1, pd / re);
         for (const ring of ripples) {
           const q = (pd - ring.r) / rippleWidth;
-          if (q * q < 9) lift += ring.lift * Math.exp(-q * q);
+          if (q * q < 9) lift += ring.lift * rim * Math.exp(-q * q);
         }
         if (lift) {
           hx += (px / pd) * lift;
@@ -547,7 +551,8 @@ export class Simulation {
           const q = (od - ring.r) / rippleWidth;
           if (q * q > 9) continue;
           const g = Math.exp(-q * q);
-          // The pull back behind the ring is gentler than the push, so it eases home instead of overshooting.
+          // The pull behind the ring is a little stronger than the push in front: particles have moved out
+          // by the time it reaches them, so an even pull would leave them, and the centre, drifting outward.
           const f = (ring.amp * rim * rippleSwing * q * (q < 0 ? RIPPLE_PULL : 1) * g * rippleShare) / od;
           vx[i] += ox * f;
           vy[i] += oy * f;
