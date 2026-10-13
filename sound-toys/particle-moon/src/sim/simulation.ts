@@ -59,10 +59,8 @@ const RIPPLE_SECONDS: readonly [number, number] = [0.45, 0.8];
 const MAX_RIPPLES = 6;
 /** Push at the ring's leading edge (and pull at its trailing edge), relative to a one-way push of the same size. */
 const RIPPLE_SWING = 3;
-/** Loose water (State above SPLIT_FROM): kicks split droplets bigger than SPLIT_SIZE particles, pushing halves apart. */
-const SPLIT_FROM = 0.5;
-const SPLIT_SIZE = 150;
-const SPLIT_PUSH = 8;
+/** How far a ring lifts what it passes toward the viewer (a bob), relative to its push. */
+const RIPPLE_BOB = 6;
 /** How far a full kick's ripple lifts the particles it passes, in shape radii. */
 const RIPPLE_LIFT = 0.12;
 /** Strongest pad hit: three times a full kick. */
@@ -152,9 +150,6 @@ export class Simulation {
   private blast = 0;
   /** Water: kicks travelling outward as rings (radius in px, impulse, glow). */
   private ripples: { r: number; amp: number; glow: number; lift: number }[] = [];
-  /** Loose water: a kick splits droplets that have grown too big (see split()). */
-  private splitPending = false;
-  private readonly droplet: Int32Array;
   private pendingShock = 0;
   /** Steps run, and the step of the last hit: the gap between hits sets how readily gas evaporates. */
   private steps = 0;
@@ -184,7 +179,6 @@ export class Simulation {
     this.excite = f();
     this.vapor = f();
     this.vaporFade = f();
-    this.droplet = new Int32Array(count);
     this.summoning = new Summoning(count);
     this.relX = f();
     this.relY = f();
@@ -299,8 +293,6 @@ export class Simulation {
     const shock = drive * lerp(1, 7.5, blast) * (R / 220) * 2.4;
     const shockGlow = Math.min(1, this.pendingShock * 0.35 + drive * 0.5);
     this.pendingShock = 0;
-    // Loose water: each kick breaks up droplets that have merged into blobs, so they keep re-forming.
-    if (shock && mode.ripple && this.stateTarget > SPLIT_FROM) this.splitPending = true;
     if (shock && mode.ripple) {
       // The ring both pushes particles and lifts their homes outward as it passes (a travelling bulge).
       this.ripples.push({ r: 0, amp: shock, glow: shockGlow, lift: Math.min(1.5, drive) * R * RIPPLE_LIFT });
@@ -332,8 +324,8 @@ export class Simulation {
     const rippleSpeed = re / (60 * lerp(RIPPLE_SECONDS[0], RIPPLE_SECONDS[1], this.stateTarget));
     const rippleWidth = re * 0.14;
     const rippleShare = rippleSpeed / (rippleWidth * Math.sqrt(Math.PI));
-    // Loose droplets have nothing holding them, so the wave swings them harder to read as clearly.
-    const rippleSwing = RIPPLE_SWING * lerp(1, 2.6, this.stateTarget ** 2);
+    // Loose droplets ride the wave like things floating on it: a little more swing, and a bob.
+    const rippleSwing = RIPPLE_SWING * lerp(1, 1.4, this.stateTarget ** 2);
     for (const ring of this.ripples) ring.r += rippleSpeed;
     this.ripples = this.ripples.filter((ring) => ring.r < re * 1.8);
     const ripples = this.ripples;
@@ -435,11 +427,7 @@ export class Simulation {
     const soft2 = soft * soft;
     const wakeR2 = (R * 0.35) ** 2;
 
-    const splitting = this.splitPending;
-    this.splitPending = false;
-    if (splitting) this.droplet.forEach((_, i, a) => (a[i] = i));
-    if (e > 0.02) this.interact(re, e, scale, gw, W, H, splitting);
-    if (splitting) this.split(scale);
+    if (e > 0.02) this.interact(re, e, scale, gw, W, H);
 
     let ke = 0;
     const zPin = 0.08 * (1 - gw);
@@ -529,6 +517,8 @@ export class Simulation {
           vx[i] += ox * f;
           vy[i] += oy * f;
           vz[i] += oz * f;
+          // The crest lifts what it passes toward the viewer, then it settles: a bob, felt most when loose.
+          vz[i] += ring.amp * RIPPLE_BOB * this.stateTarget * q * g * rippleShare;
           if (this.excite[i] < ring.glow * rim * g) this.excite[i] = ring.glow * rim * g;
         }
       }
@@ -730,55 +720,8 @@ export class Simulation {
     return ke / N;
   }
 
-  /**
-   * Splits every droplet bigger than SPLIT_SIZE in two along a random line through its middle, pushing
-   * the halves apart; cohesion then re-forms them as separate droplets. Uses the droplet links found
-   * by interact() this step.
-   */
-  private split(scale: number): void {
-    const { count: n, x, y, vx, vy, droplet } = this;
-    const root = (i: number): number => {
-      while (droplet[i] !== i) i = droplet[i] = droplet[droplet[i]];
-      return i;
-    };
-    const size = new Int32Array(n);
-    const sx = new Float32Array(n);
-    const sy = new Float32Array(n);
-    for (let i = 0; i < n; i++) {
-      const r = root(i);
-      size[r]++;
-      sx[r] += x[i];
-      sy[r] += y[i];
-    }
-    const angle = new Float32Array(n);
-    for (let r = 0; r < n; r++) if (size[r] > SPLIT_SIZE) angle[r] = Math.random() * Math.PI;
-    const push = SPLIT_PUSH * scale;
-    for (let i = 0; i < n; i++) {
-      const r = root(i);
-      if (size[r] <= SPLIT_SIZE) continue;
-      const c = Math.cos(angle[r]);
-      const s = Math.sin(angle[r]);
-      const side = (x[i] - sx[r] / size[r]) * c + (y[i] - sy[r] / size[r]) * s > 0 ? 1 : -1;
-      vx[i] += side * c * push;
-      vy[i] += side * s * push;
-    }
-  }
-
   /** Particle–particle repulsion, cohesion and viscosity over a uniform grid (half-neighbourhood scan). */
-  private interact(
-    re: number,
-    e: number,
-    scale: number,
-    gw: number,
-    W: number,
-    H: number,
-    linkDroplets: boolean,
-  ): void {
-    const droplet = this.droplet;
-    const root = (i: number): number => {
-      while (droplet[i] !== i) i = droplet[i] = droplet[droplet[i]];
-      return i;
-    };
+  private interact(re: number, e: number, scale: number, gw: number, W: number, H: number): void {
     const { mode, count: N, x, y, z, vx, vy, vz, next } = this;
     const spacing = re * Math.sqrt(Math.PI / N) * (1 + gw);
     const h = mode.range * spacing;
@@ -799,8 +742,6 @@ export class Simulation {
     const coh = mode.cohesion * e * scale;
     const visc = mode.viscosity * e;
     const h2 = h * h;
-    // Particles this close belong to the same droplet (for split()).
-    const link2 = (h * 0.6) ** 2;
     const offsets = [0, 1, cols - 1, cols, cols + 1];
     for (let id = 0; id < cells; id++) {
       for (let i = head[id]; i !== -1; i = next[i]) {
@@ -813,7 +754,6 @@ export class Simulation {
             const dz = z[j] - z[i];
             const d2 = dx * dx + dy * dy + dz * dz;
             if (d2 >= h2 || d2 < 1e-6) continue;
-            if (linkDroplets && d2 < link2) droplet[root(i)] = root(j);
             const d = Math.sqrt(d2);
             const q = 1 - d / h;
             const push = rep * q * q - coh * q * (1 - q);
