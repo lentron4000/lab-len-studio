@@ -57,6 +57,8 @@ const FLAT_Z_DAMPING = 0.93;
 /** Water: seconds for a kick's ripple to cross the shape, at Tight and at Loose; and rings alive at once. */
 const RIPPLE_SECONDS: readonly [number, number] = [0.45, 0.8];
 const MAX_RIPPLES = 6;
+/** Push at the ring's leading edge (and pull at its trailing edge), relative to a one-way push of the same size. */
+const RIPPLE_SWING = 3;
 /** How far a full kick's ripple lifts the particles it passes, in shape radii. */
 const RIPPLE_LIFT = 0.12;
 /** Strongest pad hit: three times a full kick. */
@@ -320,6 +322,8 @@ export class Simulation {
     const rippleSpeed = re / (60 * lerp(RIPPLE_SECONDS[0], RIPPLE_SECONDS[1], this.stateTarget));
     const rippleWidth = re * 0.14;
     const rippleShare = rippleSpeed / (rippleWidth * Math.sqrt(Math.PI));
+    // Loose droplets have nothing holding them, so the wave swings them harder to read as clearly.
+    const rippleSwing = RIPPLE_SWING * lerp(1, 2.6, this.stateTarget ** 2);
     for (const ring of this.ripples) ring.r += rippleSpeed;
     this.ripples = this.ripples.filter((ring) => ring.r < re * 1.8);
     const ripples = this.ripples;
@@ -499,15 +503,15 @@ export class Simulation {
       const oy = y[i] - cy;
       const oz = z[i];
       if (ripples.length) {
-        // Each ring pushes outward as it passes; spread over the steps it takes to cross a particle,
-        // the total push matches an instant shockwave's.
+        // Each ring is a wave: it pushes outward as it arrives and pulls back in as it passes, so particles
+        // bob out and back with no net drift (loose water would otherwise pile up against its wall).
         const od = Math.hypot(ox, oy, oz) || 1;
         const rim = 0.3 + 0.7 * Math.min(1, od / re);
         for (const ring of ripples) {
           const q = (od - ring.r) / rippleWidth;
           if (q * q > 9) continue;
           const g = Math.exp(-q * q);
-          const f = (ring.amp * rim * g * rippleShare) / od;
+          const f = (ring.amp * rim * rippleSwing * q * g * rippleShare) / od;
           vx[i] += ox * f;
           vy[i] += oy * f;
           vz[i] += oz * f;
