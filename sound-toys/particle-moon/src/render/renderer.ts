@@ -268,7 +268,7 @@ export class Renderer {
   }
 
   /**
-   * Day: a black disc. Night: inverted, solid white with a steady soft glow. Ritual: an eclipse,
+   * Day: a black disc with a thin white rim. Night: inverted, solid white with a steady soft glow. Ritual: an eclipse,
    * a black disc in a blood-red corona. Always fully opaque.
    */
   private drawMoon(camera: number): void {
@@ -313,6 +313,14 @@ export class Renderer {
     ctx.beginPath();
     ctx.arc(mx, my, mr, 0, Math.PI * 2);
     ctx.fill();
+    if (this.look === 'day') {
+      // A thin white rim, inside the edge, so the moon reads where it crosses the black particles.
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(mx, my, Math.max(0, mr - 0.5), 0, Math.PI * 2);
+      ctx.stroke();
+    }
     ctx.restore();
   }
 
