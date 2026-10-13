@@ -40,7 +40,7 @@ Modes are defined in [`src/lab-mode.ts`](src/lab-mode.ts).
 
 | Control     | What it does                                                                   |
 | ----------- | ------------------------------------------------------------------------------ |
-| State       | Solid ↔ cloud. Kicks push it toward cloud by the Depth amount.                 |
+| State       | Tight ↔ loose. Kicks push it looser by the Depth amount.                       |
 | Shape       | Disc or globe. The globe spins on a 23.4° axis, leaned toward you.             |
 | Spin, Orbit | One revolution / orbit per 32 bars … 1 beat, locked to the current tempo.      |
 | Physics     | Gas, water, or the pointer and moon as opposite / like magnetic poles.         |
