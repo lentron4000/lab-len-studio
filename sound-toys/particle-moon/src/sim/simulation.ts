@@ -175,7 +175,7 @@ export class Simulation {
    */
   depth = 0.65;
   /** Bars per revolution of the globe; 0 = stopped. */
-  spinBars = 4;
+  spinBars = 0;
   bpm = 100;
   /** 0 = disc, 1 = globe; the shape morphs toward it. */
   shapeTarget = 0;
@@ -455,13 +455,21 @@ export class Simulation {
     const m = this.morph;
     this.globe = m * m * m * (m * (m * 6 - 15) + 10);
     const gw = this.globe;
-    const targetSpin = gw > 0 ? angularStep(this.spinBars, this.bpm) : 0;
+    // Both shapes spin: the disc flat in the screen plane about its centre, the globe on its tilted axis;
+    // the axis blends with the morph.
+    const targetSpin = angularStep(this.spinBars, this.bpm);
     this.spinSpeed += (targetSpin - this.spinSpeed) * 0.04;
     this.spinAngle += this.spinSpeed;
     const M = rotation(GLOBE_AXIS, this.spinAngle);
+    const discCos = Math.cos(this.spinAngle);
+    const discSin = Math.sin(this.spinAngle);
+    const ax = GLOBE_AXIS[0] * gw;
+    const ay = GLOBE_AXIS[1] * gw;
+    const az = GLOBE_AXIS[2] * gw + (1 - gw);
+    const al = Math.hypot(ax, ay, az) || 1;
     const dM: Mat3 | null =
-      gw > 0 && Math.abs(this.spinSpeed) > 1e-6 && fw < 1
-        ? rotation(GLOBE_AXIS, this.spinSpeed * gw * (1 - fw))
+      Math.abs(this.spinSpeed) > 1e-6 && fw < 1
+        ? rotation([ax / al, ay / al, az / al], this.spinSpeed * (1 - fw))
         : null;
     const camera = R * CAMERA_DISTANCE;
 
@@ -592,17 +600,22 @@ export class Simulation {
         vz[i] = dM[6] * a + dM[7] * b + dM[8] * c;
       }
 
-      // Home: the disc point blended toward the rotating sphere point, loosened by the scatter.
-      const dhx = this.discX[i] * re;
-      const dhy = this.discY[i] * re;
+      // Home: the (turning) disc point blended toward the rotating sphere point, loosened by the scatter.
+      const dhx = (this.discX[i] * discCos - this.discY[i] * discSin) * re;
+      const dhy = (this.discX[i] * discSin + this.discY[i] * discCos) * re;
       const sx = this.sphereX[i];
       const sy = this.sphereY[i];
       const sz = this.sphereZ[i];
       const shx = (M[0] * sx + M[1] * sy + M[2] * sz) * re;
       const shy = (M[3] * sx + M[4] * sy + M[5] * sz) * re;
       const shz = (M[6] * sx + M[7] * sy + M[8] * sz) * re;
-      let hx = cx + dhx + (shx - dhx) * gw + this.scatterX[i] * scatter;
-      let hy = cy + dhy + (shy - dhy) * gw + this.scatterY[i] * scatter;
+      // The disc's scatter turns with it; the globe's stays put as before.
+      const scx = this.scatterX[i];
+      const scy = this.scatterY[i];
+      const sdx = scx + (scx * discCos - scy * discSin - scx) * (1 - gw);
+      const sdy = scy + (scx * discSin + scy * discCos - scy) * (1 - gw);
+      let hx = cx + dhx + (shx - dhx) * gw + sdx * scatter;
+      let hy = cy + dhy + (shy - dhy) * gw + sdy * scatter;
       let hz = shz * gw + this.scatterZ[i] * scatter * gw;
       if (ripples.length) {
         const px = x[i] - cx;

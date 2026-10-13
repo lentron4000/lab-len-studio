@@ -41,7 +41,7 @@ Modes are defined in [`src/lab-mode.ts`](src/lab-mode.ts).
 | Control     | What it does                                                                   |
 | ----------- | ------------------------------------------------------------------------------ |
 | State       | Tight ↔ loose. Kicks push it looser by the Depth amount.                       |
-| Shape       | Disc or globe. The globe spins on a 23.4° axis, leaned toward you.             |
+| Shape       | Disc or globe. The disc spins flat; the globe on a 23.4° axis, leaned to you.  |
 | Spin, Orbit | One revolution / orbit per 32 bars … 1 beat, locked to the current tempo.      |
 | Physics     | Gas, liquid, or the pointer and moon as opposite / like magnetic poles.        |
 | Source      | Off, demo kick (100 BPM), audio file, or live input.                           |

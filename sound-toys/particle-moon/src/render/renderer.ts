@@ -102,7 +102,7 @@ export class Renderer {
   tick(dt: number, now: number): void {
     if (this.look === 'night') this.fireflies.tick(dt, now, this.sim, this.reducedMotion);
     this.embers.tick(dt, this.sim.viewport.radius);
-    this.tracers.tick(dt, this.sim.globe, this.sim.spinSpeed);
+    this.tracers.tick(dt, this.sim.spinSpeed);
   }
 
   /** Draws a frame. Returns the dot radius, which the readout uses for its density figure. */

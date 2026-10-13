@@ -13,7 +13,7 @@ const MOTION_FROM = 0.45;
 const FULL_SPIN = 0.004;
 
 /**
- * Light trails while the globe spins: on brightly flashing particles (night) and on random
+ * Light trails while the shape spins: on brightly flashing particles (night) and on random
  * short-lived "comets". Keeps a ring buffer of smoothed screen positions for every particle.
  *
  * Cost control: trails are limited to the ~400 brightest, and drawn as one path per
@@ -21,7 +21,7 @@ const FULL_SPIN = 0.004;
  */
 export class Tracers {
   readonly comet: Float32Array;
-  /** 0–1: how much the globe is spinning; trails scale with it. */
+  /** 0–1: how much the shape is spinning; trails scale with it. */
   amount = 0;
   private readonly histX: Float32Array;
   private readonly histY: Float32Array;
@@ -47,8 +47,8 @@ export class Tracers {
     this.frames = 0;
   }
 
-  tick(dt: number, globe: number, spinSpeed: number): void {
-    this.amount = globe * Math.min(1, Math.abs(spinSpeed) / FULL_SPIN);
+  tick(dt: number, spinSpeed: number): void {
+    this.amount = Math.min(1, Math.abs(spinSpeed) / FULL_SPIN);
     const decay = Math.exp(-dt / 0.8);
     for (let i = 0; i < this.count; i++) {
       if (!this.comet[i]) continue;

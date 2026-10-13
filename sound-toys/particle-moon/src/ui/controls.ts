@@ -92,10 +92,8 @@ export function bindControls(host: ControlHost): {
   });
   sim.state = sim.stateTarget;
 
-  const spinRow = byId('spin-row');
   onRadio('shape', (v) => {
     sim.shapeTarget = v === 'globe' ? 1 : 0;
-    spinRow.hidden = v !== 'globe';
     host.relayout();
   });
   onRadio('night', (v) => {
