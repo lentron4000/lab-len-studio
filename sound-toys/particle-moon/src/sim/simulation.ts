@@ -63,6 +63,11 @@ const RIPPLE_SWING = 3;
 const RIPPLE_BOB = 6;
 /** How far a full kick's ripple lifts the particles it passes, in shape radii. */
 const RIPPLE_LIFT = 0.12;
+/** Ring width (shape radii), and how much motion it damps as it passes (0–1, per step at its centre). */
+const RIPPLE_WIDTH = 0.35;
+const RIPPLE_SETTLE = 0.25;
+/** Pull back behind the ring, relative to the push in front of it. */
+const RIPPLE_PULL = 0.4;
 /** Strongest pad hit: three times a full kick. */
 export const BLAST_MAX = 3;
 /** Hit × Depth at which the vapor blast is complete: the hardest pad at the default Depth. */
@@ -327,10 +332,12 @@ export class Simulation {
     const re = this.effectiveRadius();
     // Ripples cross the shape in RIPPLE_SECONDS: quicker when tight, slower when loose.
     const rippleSpeed = re / (60 * lerp(RIPPLE_SECONDS[0], RIPPLE_SECONDS[1], slider));
-    const rippleWidth = re * 0.14;
+    const rippleWidth = re * RIPPLE_WIDTH;
     const rippleShare = rippleSpeed / (rippleWidth * Math.sqrt(Math.PI));
     // Loose droplets ride the wave like things floating on it: a little more swing, and a bob.
-    const rippleSwing = RIPPLE_SWING * lerp(1, 1.4, slider ** 2);
+    // Tight water rides the moving resting places alone (a push on top just makes it bounce); loose
+    // droplets have no resting place to follow, so they get the push.
+    const rippleSwing = RIPPLE_SWING * lerp(0.2, 1.4, slider ** 1.5);
     for (const ring of this.ripples) ring.r += rippleSpeed;
     this.ripples = this.ripples.filter((ring) => ring.r < re * 1.8);
     const ripples = this.ripples;
@@ -521,12 +528,18 @@ export class Simulation {
           const q = (od - ring.r) / rippleWidth;
           if (q * q > 9) continue;
           const g = Math.exp(-q * q);
-          const f = (ring.amp * rim * rippleSwing * q * g * rippleShare) / od;
+          // The pull back behind the ring is gentler than the push, so it eases home instead of overshooting.
+          const f = (ring.amp * rim * rippleSwing * q * (q < 0 ? RIPPLE_PULL : 1) * g * rippleShare) / od;
           vx[i] += ox * f;
           vy[i] += oy * f;
           vz[i] += oz * f;
           // The crest lifts what it passes toward the viewer, then it settles: a bob, felt most when loose.
           vz[i] += ring.amp * RIPPLE_BOB * slider * q * g * rippleShare;
+          // Water is thick where the ring passes: damp the motion so it rises and settles, not rings.
+          const thick = 1 - RIPPLE_SETTLE * g;
+          vx[i] *= thick;
+          vy[i] *= thick;
+          vz[i] *= thick;
           if (this.excite[i] < ring.glow * rim * g) this.excite[i] = ring.glow * rim * g;
         }
       }
