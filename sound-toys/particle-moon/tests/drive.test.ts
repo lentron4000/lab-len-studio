@@ -25,8 +25,32 @@ describe('drive', () => {
   it('a kick at full Depth vaporizes like the hardest pad at the default Depth', () => {
     const pad = spreadAfter(BLAST_MAX, 0.65);
     const depth = spreadAfter(1, DEPTH_MAX);
-    expect(pad).toBeGreaterThan(1.6);
+    expect(pad).toBeGreaterThan(1.4);
     expect(Math.abs(depth - pad) / pad).toBeLessThan(0.12);
+  });
+
+  it('steady kicks at full Depth keep the shape on screen (blasts recharge between hits)', () => {
+    for (const mode of ['gas', 'attract', 'repel'] as const) {
+      const sim = new Simulation(1500);
+      sim.mode = PHYSICS_MODES[mode];
+      sim.moon.enabled = false;
+      sim.stateTarget = sim.state = 0.1;
+      sim.depth = DEPTH_MAX;
+      sim.setViewport({ width: 1440, height: 900, radius: 300, cx: 720, cy: 450 }, true);
+      for (let i = 0; i < 200; i++) sim.step();
+      let on = 0;
+      let samples = 0;
+      for (let s = 1; s <= 600; s++) {
+        if (s % 36 === 1) sim.fire(1);
+        sim.step();
+        if (s % 20 === 0) {
+          for (let j = 0; j < sim.count; j++)
+            if (sim.x[j] > 0 && sim.x[j] < 1440 && sim.y[j] > 0 && sim.y[j] < 900) on++;
+          samples++;
+        }
+      }
+      expect(on / samples / sim.count).toBeGreaterThan(0.5);
+    }
   });
 
   it('an ordinary kick at the old maximum Depth does not blast', () => {

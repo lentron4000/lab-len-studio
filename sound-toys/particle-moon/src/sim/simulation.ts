@@ -42,6 +42,10 @@ const VAPOR_DECAY = Math.exp(-1 / 60 / 1.5);
 /** Chance per step that gas under a fast-moving pointer evaporates, and the pointer speed (px/step) for full effect. */
 const POINTER_VAPOR = 0.15;
 const POINTER_VAPOR_SPEED = 18;
+/** Pull back on vapour per shape radius it has drifted past VAPOR_FADE_AT (px/step² at the reference radius). */
+const VAPOR_LEASH = 2;
+/** Most of the gas one hit can evaporate: the rest stays dense enough to come back. */
+const VAPOR_MAX_SHARE = 0.4;
 /** Vapour above this drifts outward; below it, it's pulled home (at Loose; Tight turns sooner). */
 const VAPOR_HOLD = 0.35;
 /** Pull home while condensing (px/step² at the reference radius, before the closeness boost). */
@@ -71,6 +75,12 @@ const RIPPLE_PULL = 1.3;
 /** A kick's attack: per-frame catch-up of the opening (about four frames to land), and frames its push is spread over. */
 const KICK_ATTACK = 0.45;
 const KICK_STEPS = 4;
+/** Share of the home pull a full blast lets go. */
+const BLAST_RELEASE = 0.85;
+/** Seconds after a hit before the next can blast fully. */
+const BLAST_RECHARGE = 2.5;
+/** How much harder than a full kick the shockwave pushes at the top of a blast. */
+const BLAST_PUSH = 7.5;
 /** Strongest pad hit: three times a full kick. */
 export const BLAST_MAX = 3;
 /** Hit × Depth at which the vapor blast is complete: the hardest pad at the default Depth. */
@@ -283,9 +293,12 @@ export class Simulation {
     // Drive: the hit scaled by Depth. Past 1 it blasts; a hard pad at the default Depth and an
     // ordinary kick at full Depth both reach DRIVE_MAX.
     const drive = strength * this.depth;
-    this.blast = Math.max(this.blast, Math.min(1, Math.max(0, (drive - 1) / (DRIVE_MAX - 1))));
-    this.pendingShock = Math.max(this.pendingShock, strength);
     const gap = (this.steps - this.lastHitStep) / 60;
+    // A blast needs time to recharge: a hit after a pause blasts fully, one straight after another only
+    // partly, so steady kicks at Deep hit hard but the shape still comes back between beats.
+    const recharge = Math.min(1, gap / BLAST_RECHARGE);
+    this.blast = Math.max(this.blast, Math.min(1, Math.max(0, (drive - 1) / (DRIVE_MAX - 1))) * recharge);
+    this.pendingShock = Math.max(this.pendingShock, strength);
     // Grows faster than the gap, so slower tempos are more vaporous overall, not just per hit.
     this.rest = Math.min(REST_MAX, Math.max(REST_MIN, (gap / REST_BEAT) ** 1.8));
     this.lastHitStep = this.steps;
@@ -313,7 +326,7 @@ export class Simulation {
     // In the blast range the shockwave grows much faster than the drive: that's what vaporizes.
     // `drive` and `shock` are this step's new hit (zero otherwise); its push is spread over KICK_STEPS.
     const drive = this.pendingShock * this.depth;
-    const shock = drive * lerp(1, 7.5, blast) * (R / 220) * 2.4;
+    const shock = drive * lerp(1, BLAST_PUSH, blast) * (R / 220) * 2.4;
     if (this.pendingShock) {
       this.kickLeft = KICK_STEPS;
       this.kickStrength = this.pendingShock;
@@ -321,11 +334,20 @@ export class Simulation {
     this.pendingShock = 0;
     const kickDrive = this.kickLeft ? this.kickStrength * this.depth : 0;
     const shockGlow = Math.min(1, this.kickStrength * 0.35 + kickDrive * 0.5);
-    const kickShock = this.kickLeft ? (kickDrive * lerp(1, 7.5, blast) * (R / 220) * 2.4) / KICK_STEPS : 0;
+    const kickShock = this.kickLeft
+      ? (kickDrive * lerp(1, BLAST_PUSH, blast) * (R / 220) * 2.4) / KICK_STEPS
+      : 0;
     if (this.kickLeft) this.kickLeft--;
     if (shock && mode.ripple) {
       // The ring both pushes particles and lifts their homes outward as it passes (a travelling bulge).
-      this.ripples.push({ r: 0, amp: shock, glow: shockGlow, lift: Math.min(1.5, drive) * R * RIPPLE_LIFT });
+      // Harder hits grow the ring faster than the hit itself, so Deep reads clearly bigger.
+      const surge = Math.min(2, (drive / 0.65) ** 0.3);
+      this.ripples.push({
+        r: 0,
+        amp: shock * surge,
+        glow: shockGlow,
+        lift: Math.min(2.2, drive * surge) * R * RIPPLE_LIFT,
+      });
       if (this.ripples.length > MAX_RIPPLES) this.ripples.shift();
     }
     const instantShock = kickShock * (1 - mode.ripple);
@@ -341,13 +363,17 @@ export class Simulation {
     const burn = summoning.intensity * fw;
 
     const scale = R / REFERENCE_RADIUS;
+    // Gas's pull home follows the slider, not each kick's opening: otherwise steady kicks hold it fully
+    // open, the pull fades to nothing and the gas never comes back between beats.
+    // (A blast still lets go fully.)
+    const eHome = lerp(e, slider, mode.vapor * (1 - blast));
     const k =
       lerp(
-        lerp(SOLID.spring, mode.spring, e) * (1 - (1 - mode.homeWeight) * Math.sqrt(e)),
+        lerp(SOLID.spring, mode.spring, eHome) * (1 - (1 - mode.homeWeight) * Math.sqrt(eHome)),
         summoning.strength,
         fw,
       ) *
-      (1 - 0.85 * blast);
+      (1 - BLAST_RELEASE * blast);
     const containK = mode.contain * e * (1 - fw) * (1 - blast);
     const re = this.effectiveRadius();
     // Ripples cross the shape in RIPPLE_SECONDS: quicker when tight, slower when loose.
@@ -371,7 +397,7 @@ export class Simulation {
     const formR = re * FORMATION_SCALE * (1 + 0.3 * burn);
     const thermal = (lerp(SOLID.thermal, mode.thermal, e) * (1 + 10 * gassy) + burn * 1.5) * scale;
     // Share of particles a kick evaporates: grows with the hit's force, mostly from the edge.
-    const evaporate = mode.vapor * (1 - fw) * Math.min(0.9, 0.16 * drive ** 1.6 * this.rest);
+    const evaporate = mode.vapor * (1 - fw) * Math.min(VAPOR_MAX_SHARE, 0.16 * drive ** 1.6 * this.rest);
     const vapor = this.vapor;
     // Tight gas makes a shorter, quicker round trip than loose: less drift, an earlier turn, a harder pull.
     const looseness = slider;
@@ -576,7 +602,7 @@ export class Simulation {
         vz[i] += oz * f;
         // The shockwave lights the shape too, brightest at the rim, in every mode.
         this.excite[i] = Math.max(this.excite[i], shockGlow * rim);
-        if (evaporate && Math.random() < evaporate * rim)
+        if (evaporate && !v && Math.random() < evaporate * rim)
           vapor[i] = Math.max(vapor[i], 0.6 + 0.4 * Math.random());
       }
       if (v) {
@@ -585,10 +611,20 @@ export class Simulation {
         const d = Math.hypot(dx, dy) || 1;
         this.vaporFade[i] = Math.min(1, d / (re * VAPOR_FADE_AT));
         if (v > vaporHold) {
-          // Vapour wanders and drifts outward, slowly.
+          // Vapour wanders and drifts outward, slowly, and stops drifting once it has faded out.
           const od = Math.hypot(ox, oy) || 1;
-          ax += ((ox / od) * vaporDrift + (Math.random() - 0.5) * thermal * 2) * v;
-          ay += ((oy / od) * vaporDrift + (Math.random() - 0.5) * thermal * 2) * v;
+          const drift = vaporDrift * (1 - this.vaporFade[i]);
+          ax += ((ox / od) * drift + (Math.random() - 0.5) * thermal * 2) * v;
+          ay += ((oy / od) * drift + (Math.random() - 0.5) * thermal * 2) * v;
+          // A leash: vapour that has drifted past where it fades out is drawn gently back, so constant
+          // kicks (which keep it from ever condensing) can't carry it off the screen.
+          const past = d / re - VAPOR_FADE_AT;
+          if (past > 0) {
+            // (Slack during a blast, so a big hit still flings it; it reins in as the blast fades.)
+            const leash = past * VAPOR_LEASH * scale * (1 - blast);
+            ax += (dx / d) * leash;
+            ay += (dy / d) * leash;
+          }
         } else {
           // Condensing: pulled home, harder the closer it gets, so it lingers far out and rushes in.
           // Ramps up steeply on approach; Tight pulls harder, Loose lets it linger.
