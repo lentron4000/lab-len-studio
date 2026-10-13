@@ -68,6 +68,9 @@ const RIPPLE_WIDTH = 0.35;
 const RIPPLE_SETTLE = 0.25;
 /** Pull back behind the ring, relative to the push in front of it. */
 const RIPPLE_PULL = 0.4;
+/** A kick's attack: per-frame catch-up of the opening (about four frames to land), and frames its push is spread over. */
+const KICK_ATTACK = 0.45;
+const KICK_STEPS = 4;
 /** Strongest pad hit: three times a full kick. */
 export const BLAST_MAX = 3;
 /** Hit × Depth at which the vapor blast is complete: the hardest pad at the default Depth. */
@@ -156,6 +159,11 @@ export class Simulation {
   /** Water: kicks travelling outward as rings (radius in px, impulse, glow). */
   private ripples: { r: number; amp: number; glow: number; lift: number }[] = [];
   private pendingShock = 0;
+  /** How open the kick has the shape right now; it rises over a few frames (attack) rather than at once. */
+  private open = 0;
+  /** The current kick's push, spread over KICK_STEPS frames so it lands with body rather than as a snap. */
+  private kickLeft = 0;
+  private kickStrength = 0;
   /** Steps run, and the step of the last hit: the gap between hits sets how readily gas evaporates. */
   private steps = 0;
   private lastHitStep = -Infinity;
@@ -296,19 +304,30 @@ export class Simulation {
     this.blast *= 0.965;
     const blast = this.blast;
     // A rippling mode doesn't open all at once on a kick; the ripple carries the kick instead.
-    this.state = slider + (1 - slider) * Math.min(1, this.pulse * this.depth * (1 - mode.ripple) + blast);
+    // The kick opens the shape over a few frames (attack), then lets go at the usual rate.
+    const openTarget = Math.min(1, this.pulse * this.depth * (1 - mode.ripple) + blast);
+    this.open += (openTarget - this.open) * (openTarget > this.open ? KICK_ATTACK : 1);
+    this.state = slider + (1 - slider) * this.open;
     const e = this.state;
     // In the blast range the shockwave grows much faster than the drive: that's what vaporizes.
+    // `drive` and `shock` are this step's new hit (zero otherwise); its push is spread over KICK_STEPS.
     const drive = this.pendingShock * this.depth;
     const shock = drive * lerp(1, 7.5, blast) * (R / 220) * 2.4;
-    const shockGlow = Math.min(1, this.pendingShock * 0.35 + drive * 0.5);
+    if (this.pendingShock) {
+      this.kickLeft = KICK_STEPS;
+      this.kickStrength = this.pendingShock;
+    }
     this.pendingShock = 0;
+    const kickDrive = this.kickLeft ? this.kickStrength * this.depth : 0;
+    const shockGlow = Math.min(1, this.kickStrength * 0.35 + kickDrive * 0.5);
+    const kickShock = this.kickLeft ? (kickDrive * lerp(1, 7.5, blast) * (R / 220) * 2.4) / KICK_STEPS : 0;
+    if (this.kickLeft) this.kickLeft--;
     if (shock && mode.ripple) {
       // The ring both pushes particles and lifts their homes outward as it passes (a travelling bulge).
       this.ripples.push({ r: 0, amp: shock, glow: shockGlow, lift: Math.min(1.5, drive) * R * RIPPLE_LIFT });
       if (this.ripples.length > MAX_RIPPLES) this.ripples.shift();
     }
-    const instantShock = shock * (1 - mode.ripple);
+    const instantShock = kickShock * (1 - mode.ripple);
 
     // A held formation takes over from the mode: a stiff spring to its target, calm damping, and no
     // thermostat, wall or spin to fight it. `fw` eases in so the swarm accelerates into place.
