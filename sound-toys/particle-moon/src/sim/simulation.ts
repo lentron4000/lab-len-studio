@@ -42,7 +42,7 @@ const VAPOR_DECAY = Math.exp(-1 / 60 / 1.5);
 /** Chance per step that gas under a fast-moving pointer evaporates, and the pointer speed (px/step) for full effect. */
 const POINTER_VAPOR = 0.15;
 const POINTER_VAPOR_SPEED = 18;
-/** Vapour above this drifts outward; below it, it's pulled home. */
+/** Vapour above this drifts outward; below it, it's pulled home (at Loose; Tight turns sooner). */
 const VAPOR_HOLD = 0.35;
 /** Pull home while condensing (px/step² at the reference radius, before the closeness boost). */
 const VAPOR_RETURN = 0.02;
@@ -312,8 +312,11 @@ export class Simulation {
     // Share of particles a kick evaporates: grows with the hit's force, mostly from the edge.
     const evaporate = mode.vapor * (1 - fw) * Math.min(0.9, 0.16 * drive ** 1.6 * this.rest);
     const vapor = this.vapor;
-    const vaporDrift = 0.2 * scale;
-    const returnPace = lerp(1.5, 0.6, this.stateTarget);
+    // Tight gas makes a shorter, quicker round trip than loose: less drift, an earlier turn, a harder pull.
+    const looseness = this.stateTarget;
+    const vaporDrift = 0.2 * scale * lerp(0.85, 1, looseness);
+    const returnPace = lerp(1.9, 0.6, looseness);
+    const vaporHold = lerp(0.42, VAPOR_HOLD, looseness);
     const scatter = R * 0.2 * e;
 
     // Shape morph and spin.
@@ -387,6 +390,7 @@ export class Simulation {
       mode.vapor *
       (1 - fw) *
       POINTER_VAPOR *
+      lerp(0.35, 1, this.stateTarget) *
       // Grows faster than the pointer's speed: a slow hand barely touches it, a fast sweep tears it.
       Math.min(2, (Math.hypot(pointer.vx, pointer.vy) / POINTER_VAPOR_SPEED) ** 1.5);
     const gravity = mode.pointerGravity * (mode.alwaysOn ? 1 : 0.25 + 0.75 * pointer.activity) * (R / 220);
@@ -472,7 +476,7 @@ export class Simulation {
         const dy = hy - y[i];
         const d = Math.hypot(dx, dy) || 1;
         this.vaporFade[i] = Math.min(1, d / (re * VAPOR_FADE_AT));
-        if (v > VAPOR_HOLD) {
+        if (v > vaporHold) {
           // Vapour wanders and drifts outward, slowly.
           const od = Math.hypot(ox, oy) || 1;
           ax += ((ox / od) * vaporDrift + (Math.random() - 0.5) * thermal * 2) * v;
@@ -481,13 +485,13 @@ export class Simulation {
           // Condensing: pulled home, harder the closer it gets, so it lingers far out and rushes in.
           // Ramps up steeply on approach; Tight pulls harder, Loose lets it linger.
           const near = 0.1 + d / re;
-          const pull = (VAPOR_RETURN * scale * returnPace * (1 - v / VAPOR_HOLD + 0.2)) / (near * near);
+          const pull = (VAPOR_RETURN * scale * returnPace * (1 - v / vaporHold + 0.2)) / (near * near);
           ax += (dx / d) * pull;
           ay += (dy / d) * pull;
         }
         const next = v * VAPOR_DECAY;
         // Home (or nearly condensed): back to the ordinary spring.
-        if (next < 0.02 || (v <= VAPOR_HOLD && d < re * 0.03)) {
+        if (next < 0.02 || (v <= vaporHold && d < re * 0.03)) {
           vapor[i] = 0;
           this.vaporFade[i] = 0;
         } else {
