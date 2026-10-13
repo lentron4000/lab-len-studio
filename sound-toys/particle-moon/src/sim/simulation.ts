@@ -37,6 +37,8 @@ const BEAM_FOCUS = 0.5;
 /** Top of the moon's Force slider. */
 const MOON_FORCE_MAX = 2;
 const BEAM_RESIDUAL = 0.25;
+/** Per-step condensing of evaporated particles: back in about two seconds. */
+const VAPOR_DECAY = Math.exp(-1 / 60 / 1.8);
 /** Depth velocity kept per step while the shape is flat. */
 const FLAT_Z_DAMPING = 0.93;
 /** Strongest pad hit: three times a full kick. */
@@ -75,6 +77,11 @@ export class Simulation {
    * bioluminescence in water. The ritual look colours by it.
    */
   readonly excite: Float32Array;
+  /**
+   * 0–1 per particle: evaporated by a kick (gas). It shrinks and fades, its home spring mostly lets go
+   * and it drifts away, then condenses back over a couple of seconds.
+   */
+  readonly vapor: Float32Array;
   readonly pointer = new Pointer();
   /** Formations summoned from the keys. */
   readonly summoning: Summoning;
@@ -139,6 +146,7 @@ export class Simulation {
     this.scatterY = f();
     this.scatterZ = f();
     this.excite = f();
+    this.vapor = f();
     this.summoning = new Summoning(count);
     this.relX = f();
     this.relY = f();
@@ -266,10 +274,17 @@ export class Simulation {
     const containK = mode.contain * e * (1 - fw) * (1 - blast);
     const re = this.effectiveRadius();
     const containR = re * mode.containRadius;
-    const targetSpeed = mode.speed * e * scale * (1 - fw);
-    const damping = lerp(lerp(SOLID.damping, mode.damping, e), 0.9, fw);
+    // Gas: the openness a kick adds (beyond the slider) makes it wander and slow, not speed up.
+    const kickOpen = this.stateTarget < 1 ? Math.max(0, (e - this.stateTarget) / (1 - this.stateTarget)) : 0;
+    const gassy = mode.vapor * kickOpen * (1 - fw);
+    const targetSpeed = mode.speed * lerp(e, this.stateTarget, mode.vapor) * scale * (1 - fw);
+    const damping = lerp(lerp(SOLID.damping, mode.damping, e), 0.9, fw) * (1 - 0.05 * gassy);
     const formR = re * FORMATION_SCALE * (1 + 0.3 * burn);
-    const thermal = (lerp(SOLID.thermal, mode.thermal, e) + burn * 1.5) * scale;
+    const thermal = (lerp(SOLID.thermal, mode.thermal, e) * (1 + 3 * gassy) + burn * 1.5) * scale;
+    // Share of particles a kick evaporates: grows with the hit's force, mostly from the edge.
+    const evaporate = mode.vapor * (1 - fw) * Math.min(0.9, 0.1 * drive ** 1.6);
+    const vapor = this.vapor;
+    const vaporDrift = 0.035 * scale;
     const scatter = R * 0.2 * e;
 
     // Shape morph and spin.
@@ -392,9 +407,12 @@ export class Simulation {
         hy += (cy + summoning.ty[i] * formR - hy) * fw;
         hz -= hz * fw;
       }
-      let ax = (hx - x[i]) * k;
-      let ay = (hy - y[i]) * k;
-      let az = (hz - z[i]) * k - z[i] * zPin;
+      // Evaporated particles have mostly lost their pull home.
+      const v = vapor[i];
+      const ki = v ? k * (1 - 0.9 * v) : k;
+      let ax = (hx - x[i]) * ki;
+      let ay = (hy - y[i]) * ki;
+      let az = (hz - z[i]) * ki - z[i] * zPin;
       ax += (Math.random() - 0.5) * thermal;
       ay += (Math.random() - 0.5) * thermal;
       az += (Math.random() - 0.5) * thermal * gw;
@@ -411,6 +429,15 @@ export class Simulation {
         vz[i] += oz * f;
         // The shockwave lights the shape too, brightest at the rim, in every mode.
         this.excite[i] = Math.max(this.excite[i], shockGlow * rim);
+        if (evaporate && Math.random() < evaporate * rim)
+          vapor[i] = Math.max(vapor[i], 0.6 + 0.4 * Math.random());
+      }
+      if (v) {
+        // Vapour wanders and drifts outward, slowly.
+        const od = Math.hypot(ox, oy) || 1;
+        ax += ((ox / od) * vaporDrift + (Math.random() - 0.5) * thermal * 2) * v;
+        ay += ((oy / od) * vaporDrift + (Math.random() - 0.5) * thermal * 2) * v;
+        vapor[i] = v * VAPOR_DECAY < 0.02 ? 0 : v * VAPOR_DECAY;
       }
       if (containK) {
         if (gw < 0.5) {
@@ -542,9 +569,10 @@ export class Simulation {
         }
       }
 
-      let nvx = (vx[i] + ax) * damping;
-      let nvy = (vy[i] + ay) * damping;
-      let nvz = (vz[i] + az) * damping * zDamp;
+      const drag = damping * (1 - 0.06 * v);
+      let nvx = (vx[i] + ax) * drag;
+      let nvy = (vy[i] + ay) * drag;
+      let nvz = (vz[i] + az) * drag * zDamp;
       const sp2 = nvx * nvx + nvy * nvy + nvz * nvz;
       if (sp2 > vmax * vmax) {
         const f = vmax / Math.sqrt(sp2);

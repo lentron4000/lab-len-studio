@@ -96,7 +96,7 @@ export class Renderer {
     const { ctx, sim, look } = this;
     const glow = look !== 'day';
     const ritual = look === 'ritual';
-    const { x, y, z, count: N, moon } = sim;
+    const { x, y, z, count: N, moon, vapor } = sim;
     const { radius: R, cx, cy } = sim.viewport;
     const sprites = this.sprites[ritual ? 'ritual' : 'night'];
 
@@ -168,11 +168,13 @@ export class Renderer {
           const qy = cy + (y[i] - cy) * ps;
           this.tracers.record(i, qx, qy);
           const f = Math.max(flash[i], comet[i] * trails);
-          const r = dot * ps * (ritual ? restSize + swell * f : 2.2 + bloom * f);
+          // Evaporating particles have lost mass: smaller and fainter.
+          const r = dot * ps * (ritual ? restSize + swell * f : 2.2 + bloom * f) * (1 - 0.5 * vapor[i]);
           const rim = 1 - limb * (1 - Math.min(1, Math.abs(z[i]) / re));
           // Ritual rests brighter: at rest it's all deep red, which needs more weight to read on black.
           const rest = ritual ? Math.min(0.85, base * restLift) : base;
-          ctx.globalAlpha = Math.min(1, (rest * rim + (1 - rest) * f * flashGain) * bandAlpha);
+          ctx.globalAlpha =
+            Math.min(1, (rest * rim + (1 - rest) * f * flashGain) * bandAlpha) * (1 - 0.6 * vapor[i]);
           const px = qx + (Math.random() - 0.5) * 2 * jitter;
           const py = qy + (Math.random() - 0.5) * 2 * jitter;
           ctx.drawImage(sprites[colourOf[i]], px - r, py - r, r * 2, r * 2);
@@ -187,7 +189,7 @@ export class Renderer {
           const qx = cx + (x[i] - cx) * ps;
           const qy = cy + (y[i] - cy) * ps;
           this.tracers.record(i, qx, qy);
-          const r = dot * ps;
+          const r = dot * ps * (1 - 0.6 * vapor[i]);
           const px = qx + (Math.random() - 0.5) * 2 * jitter;
           const py = qy + (Math.random() - 0.5) * 2 * jitter;
           ctx.moveTo(px + r, py);

@@ -41,6 +41,11 @@ export interface PhysicsMode {
   range: number;
   /** Field is on even when the pointer is still (magnetic poles). */
   alwaysOn: boolean;
+  /**
+   * How a kick turns it to vapour (0 = not at all): the opened particles wander and slow instead of
+   * speeding up, and some evaporate, drifting off before condensing back.
+   */
+  vapor: number;
   description: string;
 }
 
@@ -67,6 +72,7 @@ export const PHYSICS_MODES: Record<PhysicsModeId, PhysicsMode> = {
     viscosity: 0,
     range: 1.1,
     alwaysOn: false,
+    vapor: 1,
     description:
       'Air. Molecules fly in straight lines and bounce off each other. Sweep the pointer through to push a current; it diffuses back.',
   },
@@ -89,6 +95,7 @@ export const PHYSICS_MODES: Record<PhysicsModeId, PhysicsMode> = {
     viscosity: 0.05,
     range: 2,
     alwaysOn: false,
+    vapor: 0,
     description:
       'Liquid. No fixed positions, only cohesion and surface tension. It swirls, pulls into tendrils and pools back together.',
   },
@@ -111,6 +118,7 @@ export const PHYSICS_MODES: Record<PhysicsModeId, PhysicsMode> = {
     viscosity: 0,
     range: 2,
     alwaysOn: true,
+    vapor: 0,
     description: 'The pointer and the moon are opposite poles. Particles are pulled in and pack around them.',
   },
   repel: {
@@ -132,6 +140,7 @@ export const PHYSICS_MODES: Record<PhysicsModeId, PhysicsMode> = {
     viscosity: 0,
     range: 2,
     alwaysOn: true,
+    vapor: 0,
     description:
       'The pointer and the moon are like poles. Particles are pushed aside and close in behind them.',
   },
