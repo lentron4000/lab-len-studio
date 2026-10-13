@@ -9,6 +9,7 @@ import { nowSeconds } from './lib/math';
 import { load, save, StorageKey } from './lib/storage';
 import { MidiController } from './midi/midi-controller';
 import { type Look, Renderer } from './render/renderer';
+import { Bloom, BLOOM_SECONDS } from './sim/bloom';
 import { Simulation } from './sim/simulation';
 import { bindControls, createAudioListener, type ControlHost } from './ui/controls';
 import { computeViewport, placePanelTab } from './ui/layout';
@@ -18,6 +19,17 @@ import { bindSummoning } from './ui/summon';
 const STEP_MS = 1000 / 60;
 const MAX_STEPS_PER_FRAME = 3;
 const DEFAULT_BPM = 100;
+/** The loader shows at least this long, so it reads as a beat rather than a flicker… */
+const MIN_LOADER_MS = 800;
+/** …and waits at most this long for the web fonts (offline they never come). */
+const FONT_WAIT_MS = 3000;
+/** Into the bloom, as a share of its length, when the logo and controls fade in. */
+const UI_REVEAL_AT = 0.6;
+
+const wait = (ms: number): Promise<void> =>
+  new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 
 const LOOK_RADIO: Record<Look, string> = { day: 'night-off', night: 'night-on', ritual: 'night-ritual' };
 
@@ -66,6 +78,11 @@ class App implements ControlHost {
   private accumulator = 0;
   private energy = 0;
   private frameCount = 0;
+  /** The opening: waiting on the loader, then the bloom. Physics starts once both are done. */
+  private waiting = true;
+  private bloom: Bloom | null = null;
+  private bloomStart = 0;
+  private uiShown = false;
 
   constructor() {
     const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -93,6 +110,7 @@ class App implements ControlHost {
 
     window.addEventListener('resize', () => {
       this.resize();
+      if (this.bloom) this.endBloom(); // its targets just moved; finish rather than fly to old ones
     });
     this.resize();
     // The panel and header change size on their own too: when the web font arrives (text rewraps),
@@ -109,6 +127,51 @@ class App implements ControlHost {
     requestAnimationFrame((t) => {
       this.frame(t);
     });
+    void this.open(reducedMotion);
+  }
+
+  /** Loader → bloom → controls. Waits for the fonts so the panel is measured at its final size. */
+  private async open(reducedMotion: boolean): Promise<void> {
+    this.renderer.limit = 0;
+    this.placeLoader();
+    await Promise.all([Promise.race([document.fonts.ready, wait(FONT_WAIT_MS)]), wait(MIN_LOADER_MS)]);
+    this.resize(); // final layout; every particle at home
+    this.placeLoader();
+    this.waiting = false;
+    document.documentElement.classList.remove('loading');
+    if (reducedMotion) {
+      this.renderer.limit = Infinity;
+      this.showUi();
+      return;
+    }
+    const { cx, cy } = this.sim.viewport;
+    this.bloom = new Bloom(this.sim, cx, cy);
+    this.bloomStart = performance.now();
+  }
+
+  /** Moves the loader's particle to the shape's centre, where the bloom will start. */
+  private placeLoader(): void {
+    const { cx, cy } = this.sim.viewport;
+    const style = document.documentElement.style;
+    style.setProperty('--lx', `${cx}px`);
+    style.setProperty('--ly', `${cy}px`);
+  }
+
+  private endBloom(): void {
+    this.bloom = null;
+    this.renderer.limit = Infinity;
+    this.showUi();
+  }
+
+  private showUi(): void {
+    if (this.uiShown) return;
+    this.uiShown = true;
+    const root = document.documentElement;
+    root.classList.add('intro');
+    root.classList.remove('preload');
+    window.setTimeout(() => {
+      root.classList.remove('intro');
+    }, 1200);
   }
 
   fire(strength: number): void {
@@ -165,6 +228,11 @@ class App implements ControlHost {
 
     let steps = 0;
     let ke = 0;
+    if (this.waiting || this.bloom) {
+      // Nothing moves under its own physics until the shape has bloomed.
+      this.accumulator = 0;
+      if (this.bloom) this.advanceBloom(now);
+    }
     while (this.accumulator >= STEP_MS && steps < MAX_STEPS_PER_FRAME) {
       ke = this.sim.step();
       this.accumulator -= STEP_MS;
@@ -182,6 +250,16 @@ class App implements ControlHost {
     requestAnimationFrame((t) => {
       this.frame(t);
     });
+  }
+
+  private advanceBloom(now: number): void {
+    if (!this.bloom) return;
+    const t = (now - this.bloomStart) / 1000;
+    this.renderer.limit = this.bloom.update(t);
+    // Particles jump from the loader as they're born; don't draw trails across that.
+    this.renderer.tracers.reset();
+    if (t > BLOOM_SECONDS * UI_REVEAL_AT) this.showUi();
+    if (this.bloom.done(t)) this.endBloom();
   }
 
   /** Kicks and beats → pulses. The demo always pulses on its own kick, which is also its beat. */

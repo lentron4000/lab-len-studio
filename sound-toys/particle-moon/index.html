@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="loading preload">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -13,6 +13,90 @@
       content="An audio-reactive particle instrument by Lenny Ford (len.studio): tempo tracking, kick detection and MIDI control driving a particle globe and its moon."
     />
     <meta name="author" content="Lenny Ford, Len Studio" />
+    <script>
+      // The mode (?m=, or this build's default) sets the page colours before first paint, so the loader
+      // appears on the right background. lab-mode.ts decides everything else once the app starts.
+      (function () {
+        var fallback = '%VITE_LAB_MODE%';
+        var m = (
+          new URLSearchParams(location.search).get('m') || (fallback.charAt(0) === '%' ? '' : fallback)
+        ).toLowerCase();
+        var root = document.documentElement;
+        if (m === 'night' || m === 'ritual') root.setAttribute('data-night', '');
+        if (m === 'ritual') root.setAttribute('data-ritual', '');
+      })();
+    </script>
+    <style>
+      /* The loader: one particle circling until the app is ready. Inline so it shows before the
+         app's stylesheet loads. Everything else stays hidden until the shape has bloomed. */
+      html.preload body {
+        margin: 0;
+        background: #ffffff;
+      }
+      html.preload[data-night] body {
+        background: #150e27;
+      }
+      html.preload[data-ritual] body {
+        background: #000000;
+      }
+      .loader {
+        position: fixed;
+        inset: 0;
+        z-index: 5;
+        pointer-events: none;
+        transition: opacity 0.3s ease;
+      }
+      html:not(.loading) .loader {
+        opacity: 0;
+      }
+      /* Starts mid-screen; the app then glides it to where the shape will be. */
+      .loader span {
+        position: absolute;
+        left: var(--lx, 50%);
+        top: var(--ly, 50%);
+        transform: translate(-50%, -50%);
+        transition:
+          left 0.6s ease,
+          top 0.6s ease;
+      }
+      .loader i {
+        display: block;
+        position: relative;
+        width: 20px;
+        height: 20px;
+        animation: loader-turn 1.2s linear infinite;
+      }
+      .loader i::before {
+        content: '';
+        position: absolute;
+        left: 7px;
+        top: 0;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--dot, #111214);
+        box-shadow: 0 0 var(--glow, 0) var(--dot, #111214);
+      }
+      [data-night] .loader {
+        --dot: #ff2e97;
+        --glow: 8px;
+      }
+      [data-ritual] .loader {
+        --dot: #d20c16;
+        --glow: 8px;
+      }
+      @keyframes loader-turn {
+        to {
+          transform: rotate(1turn);
+        }
+      }
+      html.preload .top,
+      html.preload #panel,
+      html.preload .tab {
+        opacity: 0;
+        visibility: hidden;
+      }
+    </style>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -26,6 +110,9 @@
       aria-label="A shape made of particles that reacts to sound. Move the pointer through it to disturb it."
     ></canvas>
     <div class="veil" aria-hidden="true"></div>
+    <div class="loader" role="progressbar" aria-label="Loading">
+      <span><i></i></span>
+    </div>
 
     <div class="top">
       <h1>Particle Moon</h1>

@@ -666,3 +666,12 @@ legend {
     padding-left: 64px;
   }
 }
+
+/* Opening: after the loader and the bloom, the header and controls fade in. */
+html.intro .top,
+html.intro #panel,
+html.intro .tab {
+  transition:
+    opacity 0.9s ease,
+    visibility 0s !important;
+}

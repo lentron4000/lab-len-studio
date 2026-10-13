@@ -36,6 +36,8 @@ export type Look = 'day' | 'night' | 'ritual';
  */
 export class Renderer {
   look: Look = 'day';
+  /** Only particles below this index are drawn (the opening bloom brings them in). */
+  limit = Infinity;
   readonly fireflies: Fireflies;
   readonly tracers: Tracers;
   readonly embers = new Embers();
@@ -219,7 +221,8 @@ export class Renderer {
 
   /** Depth bands by z (far side lighter), split at the moon's depth for correct occlusion. */
   private sortIntoBands(re: number): void {
-    const { z, count, moon } = this.sim;
+    const { z, moon } = this.sim;
+    const count = Math.min(this.sim.count, this.limit);
     const cut = moon.visible ? moon.z : Infinity;
     this.bandSize.fill(0);
     for (let i = 0; i < count; i++) {
