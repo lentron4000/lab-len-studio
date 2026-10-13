@@ -22,6 +22,9 @@ import {
 import { Tracers } from './tracers';
 
 const BANDS = 4;
+/** At full drift an evaporating particle is drawn this much smaller and fainter. */
+const VAPOR_SHRINK = 0.8;
+const VAPOR_FAINT = 0.85;
 /** Chance per frame that a hot ritual particle sheds an ember, and the excitation it takes. */
 const EMBER_RATE = 0.03;
 const EMBER_HEAT = 0.65;
@@ -52,6 +55,10 @@ export class Renderer {
   /** Particle indices per band; 0–3 behind the moon, 4–7 in front. */
   private readonly bands: Int32Array[];
   private readonly bandSize = new Int32Array(BANDS * 2);
+  /** Day: fading (evaporating) particles in a band, drawn one by one after the batch. */
+  private readonly fadeX: Float32Array;
+  private readonly fadeY: Float32Array;
+  private readonly fadeI: Int32Array;
   private width = 1;
   private height = 1;
   private dusk: CanvasGradient | null = null;
@@ -72,6 +79,9 @@ export class Renderer {
     this.heatOf = new Uint8Array(sim.count);
     this.restTone = Float32Array.from({ length: sim.count }, () => Math.random());
     this.bands = Array.from({ length: BANDS * 2 }, () => new Int32Array(sim.count));
+    this.fadeX = new Float32Array(sim.count);
+    this.fadeY = new Float32Array(sim.count);
+    this.fadeI = new Int32Array(sim.count);
   }
 
   resize(width: number, height: number, dpr: number): void {
@@ -96,7 +106,7 @@ export class Renderer {
     const { ctx, sim, look } = this;
     const glow = look !== 'day';
     const ritual = look === 'ritual';
-    const { x, y, z, count: N, moon, vapor } = sim;
+    const { x, y, z, count: N, moon, vaporFade: fade } = sim;
     const { radius: R, cx, cy } = sim.viewport;
     const sprites = this.sprites[ritual ? 'ritual' : 'night'];
 
@@ -168,13 +178,14 @@ export class Renderer {
           const qy = cy + (y[i] - cy) * ps;
           this.tracers.record(i, qx, qy);
           const f = Math.max(flash[i], comet[i] * trails);
-          // Evaporating particles have lost mass: smaller and fainter.
-          const r = dot * ps * (ritual ? restSize + swell * f : 2.2 + bloom * f) * (1 - 0.75 * vapor[i]);
+          // Evaporating particles lose mass as they drift away: smaller and fainter the further out.
+          const r =
+            dot * ps * (ritual ? restSize + swell * f : 2.2 + bloom * f) * (1 - VAPOR_SHRINK * fade[i]);
           const rim = 1 - limb * (1 - Math.min(1, Math.abs(z[i]) / re));
           // Ritual rests brighter: at rest it's all deep red, which needs more weight to read on black.
           const rest = ritual ? Math.min(0.85, base * restLift) : base;
           ctx.globalAlpha =
-            Math.min(1, (rest * rim + (1 - rest) * f * flashGain) * bandAlpha) * (1 - 0.6 * vapor[i]);
+            Math.min(1, (rest * rim + (1 - rest) * f * flashGain) * bandAlpha) * (1 - VAPOR_FAINT * fade[i]);
           const px = qx + (Math.random() - 0.5) * 2 * jitter;
           const py = qy + (Math.random() - 0.5) * 2 * jitter;
           ctx.drawImage(sprites[colourOf[i]], px - r, py - r, r * 2, r * 2);
@@ -183,19 +194,36 @@ export class Renderer {
       } else {
         ctx.fillStyle = DAY_BANDS[b % BANDS];
         ctx.beginPath();
+        let fading = 0;
         for (let n = 0; n < size; n++) {
           const i = idx[n];
           const ps = camera / (camera - z[i]);
           const qx = cx + (x[i] - cx) * ps;
           const qy = cy + (y[i] - cy) * ps;
           this.tracers.record(i, qx, qy);
-          const r = dot * ps * (1 - 0.75 * vapor[i]);
           const px = qx + (Math.random() - 0.5) * 2 * jitter;
           const py = qy + (Math.random() - 0.5) * 2 * jitter;
+          if (fade[i] > 0.02) {
+            // Drawn on their own below, so each can fade.
+            this.fadeX[fading] = px;
+            this.fadeY[fading] = py;
+            this.fadeI[fading++] = i;
+            continue;
+          }
+          const r = dot * ps;
           ctx.moveTo(px + r, py);
           ctx.arc(px, py, r, 0, Math.PI * 2);
         }
         ctx.fill();
+        for (let n = 0; n < fading; n++) {
+          const i = this.fadeI[n];
+          const r = dot * (camera / (camera - z[i])) * (1 - VAPOR_SHRINK * fade[i]);
+          ctx.globalAlpha = 1 - VAPOR_FAINT * fade[i];
+          ctx.beginPath();
+          ctx.arc(this.fadeX[n], this.fadeY[n], r, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
       }
     }
     if (ritual) {

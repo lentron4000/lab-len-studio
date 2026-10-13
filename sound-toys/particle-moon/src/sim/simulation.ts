@@ -39,8 +39,16 @@ const MOON_FORCE_MAX = 2;
 const BEAM_RESIDUAL = 0.25;
 /** Per-step condensing of evaporated particles: back in a few seconds. */
 const VAPOR_DECAY = Math.exp(-1 / 60 / 2);
-/** Vapour above this has no pull home at all. */
+/** Vapour above this drifts outward; below it, it's pulled home. */
 const VAPOR_HOLD = 0.25;
+/** Pull home while condensing (px/step² at the reference radius, before the closeness boost). */
+const VAPOR_RETURN = 0.12;
+/** Drift from home, in shape radii, at which an evaporating particle has fully faded. */
+const VAPOR_FADE_AT = 0.45;
+/** Rest between hits: at 100 bpm (REST_BEAT s) evaporation is as tuned; longer rests raise it, to REST_MAX. */
+const REST_BEAT = 0.6;
+const REST_MIN = 0.5;
+const REST_MAX = 3;
 /** Depth velocity kept per step while the shape is flat. */
 const FLAT_Z_DAMPING = 0.93;
 /** Strongest pad hit: three times a full kick. */
@@ -84,6 +92,8 @@ export class Simulation {
    * and it drifts away, then condenses back over a couple of seconds.
    */
   readonly vapor: Float32Array;
+  /** 0–1 per particle: how far an evaporating particle has drifted from home. It shrinks and fades by this. */
+  readonly vaporFade: Float32Array;
   readonly pointer = new Pointer();
   /** Formations summoned from the keys. */
   readonly summoning: Summoning;
@@ -127,6 +137,11 @@ export class Simulation {
   /** 0–1: how far past a full kick the last hit went. Opens the shape fully and vaporizes it. */
   private blast = 0;
   private pendingShock = 0;
+  /** Steps run, and the step of the last hit: the gap between hits sets how readily gas evaporates. */
+  private steps = 0;
+  private lastHitStep = -Infinity;
+  /** Rest before the last hit, relative to a 100 bpm beat (0.5–3): longer rests, more vapour. */
+  private rest = 1;
   private spinAngle = 0;
   private view: Viewport = { width: 1, height: 1, radius: 100, cx: 0, cy: 0 };
 
@@ -149,6 +164,7 @@ export class Simulation {
     this.scatterZ = f();
     this.excite = f();
     this.vapor = f();
+    this.vaporFade = f();
     this.summoning = new Summoning(count);
     this.relX = f();
     this.relY = f();
@@ -237,10 +253,15 @@ export class Simulation {
     const drive = strength * this.depth;
     this.blast = Math.max(this.blast, Math.min(1, Math.max(0, (drive - 1) / (DRIVE_MAX - 1))));
     this.pendingShock = Math.max(this.pendingShock, strength);
+    const gap = (this.steps - this.lastHitStep) / 60;
+    // Grows faster than the gap, so slower tempos are more vaporous overall, not just per hit.
+    this.rest = Math.min(REST_MAX, Math.max(REST_MIN, (gap / REST_BEAT) ** 1.8));
+    this.lastHitStep = this.steps;
   }
 
   /** Advances one 1/60 s step. Returns mean kinetic energy (px²/step²) for the readout. */
   step(): number {
+    this.steps++;
     const { mode, moon, pointer, count: N, x, y, z, vx, vy, vz } = this;
     const { radius: R, cx, cy, width: W, height: H } = this.view;
 
@@ -280,13 +301,13 @@ export class Simulation {
     // Gas: the openness a kick adds (beyond the slider) makes it wander and slow, not speed up.
     const kickOpen = this.stateTarget < 1 ? Math.max(0, (e - this.stateTarget) / (1 - this.stateTarget)) : 0;
     // (Not during a blast: that should still fling it.)
-    const gassy = mode.vapor * kickOpen * (1 - fw) * (1 - blast);
+    const gassy = Math.min(1, mode.vapor * kickOpen * (1 - fw) * (1 - blast) * this.rest);
     const targetSpeed = mode.speed * lerp(e, this.stateTarget, mode.vapor) * scale * (1 - fw);
     const damping = lerp(lerp(SOLID.damping, mode.damping, e), 0.9, fw) * (1 - 0.1 * gassy);
     const formR = re * FORMATION_SCALE * (1 + 0.3 * burn);
     const thermal = (lerp(SOLID.thermal, mode.thermal, e) * (1 + 10 * gassy) + burn * 1.5) * scale;
     // Share of particles a kick evaporates: grows with the hit's force, mostly from the edge.
-    const evaporate = mode.vapor * (1 - fw) * Math.min(0.9, 0.16 * drive ** 1.6);
+    const evaporate = mode.vapor * (1 - fw) * Math.min(0.9, 0.16 * drive ** 1.6 * this.rest);
     const vapor = this.vapor;
     const vaporDrift = 0.2 * scale;
     const scatter = R * 0.2 * e;
@@ -413,7 +434,7 @@ export class Simulation {
       }
       const v = vapor[i];
       // No pull home while mostly vapour; it returns over the last stretch of condensing.
-      const ki = v > VAPOR_HOLD ? 0 : k * (1 - v / VAPOR_HOLD) ** 2;
+      const ki = v ? 0 : k;
       let ax = (hx - x[i]) * ki;
       let ay = (hy - y[i]) * ki;
       let az = (hz - z[i]) * ki - z[i] * zPin;
@@ -437,11 +458,29 @@ export class Simulation {
           vapor[i] = Math.max(vapor[i], 0.6 + 0.4 * Math.random());
       }
       if (v) {
-        // Vapour wanders and drifts outward, slowly.
-        const od = Math.hypot(ox, oy) || 1;
-        ax += ((ox / od) * vaporDrift + (Math.random() - 0.5) * thermal * 2) * v;
-        ay += ((oy / od) * vaporDrift + (Math.random() - 0.5) * thermal * 2) * v;
-        vapor[i] = v * VAPOR_DECAY < 0.02 ? 0 : v * VAPOR_DECAY;
+        const dx = hx - x[i];
+        const dy = hy - y[i];
+        const d = Math.hypot(dx, dy) || 1;
+        this.vaporFade[i] = Math.min(1, d / (re * VAPOR_FADE_AT));
+        if (v > VAPOR_HOLD) {
+          // Vapour wanders and drifts outward, slowly.
+          const od = Math.hypot(ox, oy) || 1;
+          ax += ((ox / od) * vaporDrift + (Math.random() - 0.5) * thermal * 2) * v;
+          ay += ((oy / od) * vaporDrift + (Math.random() - 0.5) * thermal * 2) * v;
+        } else {
+          // Condensing: pulled home, harder the closer it gets, so it lingers far out and rushes in.
+          const pull = (VAPOR_RETURN * scale * (1 - v / VAPOR_HOLD + 0.2)) / (0.15 + d / re);
+          ax += (dx / d) * pull;
+          ay += (dy / d) * pull;
+        }
+        const next = v * VAPOR_DECAY;
+        // Home (or nearly condensed): back to the ordinary spring.
+        if (next < 0.02 || (v <= VAPOR_HOLD && d < re * 0.03)) {
+          vapor[i] = 0;
+          this.vaporFade[i] = 0;
+        } else {
+          vapor[i] = next;
+        }
       }
       if (containK) {
         if (gw < 0.5) {
@@ -573,7 +612,7 @@ export class Simulation {
         }
       }
 
-      const drag = damping * (1 - 0.06 * v);
+      const drag = damping * (1 - 0.06 * v * (1 - blast));
       let nvx = (vx[i] + ax) * drag;
       let nvy = (vy[i] + ay) * drag;
       let nvz = (vz[i] + az) * drag * zDamp;
