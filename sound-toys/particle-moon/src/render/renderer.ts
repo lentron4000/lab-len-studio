@@ -22,6 +22,13 @@ import {
 import { Tracers } from './tracers';
 
 const BANDS = 4;
+/** Spinning, each particle is drawn as a streak: its smoothed screen motion over this many frames. */
+const STREAK_FRAMES = 5;
+/** Spin speed (radians per step) at which streaks reach full length; longest streak in shape radii. */
+const STREAK_FULL_SPIN = 0.004;
+const STREAK_MAX = 0.2;
+/** Glow looks: sprites stamped along a streak, at most. */
+const STREAK_STAMPS = 6;
 /** Extra vibration on particles huddled round an attracting mouse. */
 const HUDDLE_BUZZ = 0.45;
 /** At full drift an evaporating particle is drawn this much smaller and fainter. */
@@ -63,6 +70,16 @@ export class Renderer {
   private readonly fadeX: Float32Array;
   private readonly fadeY: Float32Array;
   private readonly fadeI: Int32Array;
+  /** Last screen position and smoothed screen velocity per particle (for streaks). */
+  private readonly lastX: Float32Array;
+  private readonly lastY: Float32Array;
+  private readonly velX: Float32Array;
+  private readonly velY: Float32Array;
+  private streakFrames = 0;
+  /** Day: streaking particles in a band, stroked after the dots. */
+  private readonly streakI: Int32Array;
+  private readonly streakX: Float32Array;
+  private readonly streakY: Float32Array;
   private width = 1;
   private height = 1;
   private dusk: CanvasGradient | null = null;
@@ -86,6 +103,13 @@ export class Renderer {
     this.fadeX = new Float32Array(sim.count);
     this.fadeY = new Float32Array(sim.count);
     this.fadeI = new Int32Array(sim.count);
+    this.lastX = new Float32Array(sim.count);
+    this.lastY = new Float32Array(sim.count);
+    this.velX = new Float32Array(sim.count);
+    this.velY = new Float32Array(sim.count);
+    this.streakI = new Int32Array(sim.count);
+    this.streakX = new Float32Array(sim.count);
+    this.streakY = new Float32Array(sim.count);
   }
 
   resize(width: number, height: number, dpr: number): void {
@@ -96,13 +120,15 @@ export class Renderer {
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     this.dusk = null;
     this.tracers.reset();
+    this.resetStreaks();
   }
 
   /** Per-frame effects that run on real time rather than simulation steps. */
   tick(dt: number, now: number): void {
     if (this.look === 'night') this.fireflies.tick(dt, now, this.sim, this.reducedMotion);
     this.embers.tick(dt, this.sim.viewport.radius);
-    this.tracers.tick(dt, this.sim.spinSpeed);
+    // While spinning the particles draw their own streaks, so the separate spin trails stay off.
+    this.tracers.tick(dt, 0);
   }
 
   /** Draws a frame. Returns the dot radius, which the readout uses for its density figure. */
@@ -168,6 +194,13 @@ export class Renderer {
 
     ctx.save();
     if (glow) ctx.globalCompositeOperation = 'lighter';
+    // Streaks: how far each particle's motion is drawn out (0 when not spinning).
+    const streak =
+      STREAK_FRAMES *
+      Math.min(1, Math.abs(sim.spinSpeed) / STREAK_FULL_SPIN) *
+      (this.streakFrames > 2 ? 1 : 0);
+    const streakMax = R * STREAK_MAX;
+    this.streakFrames++;
     for (let b = 0; b < BANDS * 2; b++) {
       if (b === BANDS && moon.visible) this.drawMoon(camera);
       const idx = this.bands[b];
@@ -181,6 +214,7 @@ export class Renderer {
           const qx = cx + (x[i] - cx) * ps;
           const qy = cy + (y[i] - cy) * ps;
           this.tracers.record(i, qx, qy);
+          this.track(i, qx, qy);
           const f = Math.max(flash[i], comet[i] * trails);
           // Evaporating particles lose mass as they drift away: smaller and fainter the further out.
           const r =
@@ -192,21 +226,50 @@ export class Renderer {
             Math.min(1, (rest * rim + (1 - rest) * f * flashGain) * bandAlpha) * (1 - VAPOR_FAINT * fade[i]);
           const px = qx + (Math.random() - 0.5) * 2 * jitter * (1 + HUDDLE_BUZZ * huddle[i]);
           const py = qy + (Math.random() - 0.5) * 2 * jitter * (1 + HUDDLE_BUZZ * huddle[i]);
-          ctx.drawImage(sprites[colourOf[i]], px - r, py - r, r * 2, r * 2);
+          const sprite = sprites[colourOf[i]];
+          let sx = this.velX[i] * streak;
+          let sy = this.velY[i] * streak;
+          const sl = Math.hypot(sx, sy);
+          if (sl > streakMax) {
+            sx *= streakMax / sl;
+            sy *= streakMax / sl;
+          }
+          if (sl > r * 0.5) {
+            // A streak: sprites stamped back along its motion, fading toward the tail.
+            const stamps = Math.min(STREAK_STAMPS, Math.ceil(Math.min(sl, streakMax) / r));
+            const head = ctx.globalAlpha;
+            for (let k = stamps; k >= 0; k--) {
+              const t = k / stamps;
+              ctx.globalAlpha = head * (1 - 0.7 * t);
+              ctx.drawImage(sprite, px - sx * t - r, py - sy * t - r, r * 2, r * 2);
+            }
+            ctx.globalAlpha = head;
+          } else {
+            ctx.drawImage(sprite, px - r, py - r, r * 2, r * 2);
+          }
           if (ritual && f > EMBER_HEAT && Math.random() < emberRate * f) this.embers.spawn(px, py, f, R);
         }
       } else {
         ctx.fillStyle = DAY_BANDS[b % BANDS];
         ctx.beginPath();
         let fading = 0;
+        let streaking = 0;
         for (let n = 0; n < size; n++) {
           const i = idx[n];
           const ps = camera / (camera - z[i]);
           const qx = cx + (x[i] - cx) * ps;
           const qy = cy + (y[i] - cy) * ps;
           this.tracers.record(i, qx, qy);
+          this.track(i, qx, qy);
           const px = qx + (Math.random() - 0.5) * 2 * jitter * (1 + HUDDLE_BUZZ * huddle[i]);
           const py = qy + (Math.random() - 0.5) * 2 * jitter * (1 + HUDDLE_BUZZ * huddle[i]);
+          if (streak && fade[i] <= 0.02 && Math.hypot(this.velX[i], this.velY[i]) * streak > dot * 0.5) {
+            // Stroked as a streak below.
+            this.streakX[streaking] = px;
+            this.streakY[streaking] = py;
+            this.streakI[streaking++] = i;
+            continue;
+          }
           if (fade[i] > 0.02) {
             // Drawn on their own below, so each can fade.
             this.fadeX[fading] = px;
@@ -219,6 +282,26 @@ export class Renderer {
           ctx.arc(px, py, r, 0, Math.PI * 2);
         }
         ctx.fill();
+        if (streaking) {
+          // Each streaking particle as a round-ended line back along its motion: the particle is its trail.
+          ctx.strokeStyle = DAY_BANDS[b % BANDS];
+          ctx.lineWidth = dot * 2;
+          ctx.lineCap = 'round';
+          ctx.beginPath();
+          for (let n = 0; n < streaking; n++) {
+            const i = this.streakI[n];
+            let sx = this.velX[i] * streak;
+            let sy = this.velY[i] * streak;
+            const sl = Math.hypot(sx, sy);
+            if (sl > streakMax) {
+              sx *= streakMax / sl;
+              sy *= streakMax / sl;
+            }
+            ctx.moveTo(this.streakX[n] - sx, this.streakY[n] - sy);
+            ctx.lineTo(this.streakX[n], this.streakY[n]);
+          }
+          ctx.stroke();
+        }
         for (let n = 0; n < fading; n++) {
           const i = this.fadeI[n];
           const r = dot * (camera / (camera - z[i])) * (1 - VAPOR_SHRINK * fade[i]);
@@ -237,6 +320,23 @@ export class Renderer {
     ctx.restore();
     this.tracers.endFrame();
     return dot;
+  }
+
+  /** Records particle i's screen position and updates its smoothed screen velocity (px/frame). */
+  private track(i: number, qx: number, qy: number): void {
+    if (this.streakFrames > 1) {
+      this.velX[i] += (qx - this.lastX[i] - this.velX[i]) * 0.4;
+      this.velY[i] += (qy - this.lastY[i] - this.velY[i]) * 0.4;
+    }
+    this.lastX[i] = qx;
+    this.lastY[i] = qy;
+  }
+
+  /** Positions jumped (resize, opening): forget motion so nothing streaks across the jump. */
+  resetStreaks(): void {
+    this.streakFrames = 0;
+    this.velX.fill(0);
+    this.velY.fill(0);
   }
 
   /**

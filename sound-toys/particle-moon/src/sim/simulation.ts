@@ -111,6 +111,9 @@ const BLAST_RELEASE = 0.85;
 const BLAST_RECHARGE = 2.5;
 /** How much harder than a full kick the shockwave pushes at the top of a blast. */
 const BLAST_PUSH = 7.5;
+/** Disc swirl: spread of particles' own orbit rates (±), and how firmly loose particles follow the swirl. */
+const SWIRL_SPREAD = 0.35;
+const SWIRL_GRIP = 0.08;
 /** Seconds to morph between disc and globe. */
 const MORPH_SECONDS = 1.6;
 /** Strongest pad hit: three times a full kick. */
@@ -154,6 +157,9 @@ export class Simulation {
    * and it drifts away, then condenses back over a couple of seconds.
    */
   readonly vapor: Float32Array;
+  /** Disc swirl: each particle's turn so far about the centre, and its own rate (×spin). */
+  private readonly discTurn: Float32Array;
+  private readonly swirlRate: Float32Array;
   /**
    * 0–1 per particle: how close it is to an attracting mouse. Those particles pack tighter and buzz
    * harder (the moon's pile is left as it is).
@@ -240,6 +246,8 @@ export class Simulation {
     this.scatterZ = f();
     this.excite = f();
     this.vapor = f();
+    this.discTurn = f();
+    this.swirlRate = f();
     this.huddle = f();
     this.vaporFade = f();
     this.summoning = new Summoning(count);
@@ -258,6 +266,8 @@ export class Simulation {
       this.sphereX[i] = Math.cos(a) * sr;
       this.sphereY[i] = sy;
       this.sphereZ[i] = Math.sin(a) * sr;
+      // Inner particles orbit faster than outer ones, and each a little differently.
+      this.swirlRate[i] = lerp(1.6, 0.6, r) * (1 + SWIRL_SPREAD * (Math.random() * 2 - 1));
       // Gaussian scatter that loosens the shape toward the cloud end.
       this.scatterX[i] = gaussian();
       this.scatterY[i] = gaussian();
@@ -455,22 +465,18 @@ export class Simulation {
     const m = this.morph;
     this.globe = m * m * m * (m * (m * 6 - 15) + 10);
     const gw = this.globe;
-    // Both shapes spin: the disc flat in the screen plane about its centre, the globe on its tilted axis;
-    // the axis blends with the morph.
+    // Spin. The globe turns rigidly on its tilted axis. The disc swirls: every particle orbits the centre
+    // at its own rate (inner faster, each a little different), so they slide past one another.
     const targetSpin = angularStep(this.spinBars, this.bpm);
     this.spinSpeed += (targetSpin - this.spinSpeed) * 0.04;
     this.spinAngle += this.spinSpeed;
     const M = rotation(GLOBE_AXIS, this.spinAngle);
-    const discCos = Math.cos(this.spinAngle);
-    const discSin = Math.sin(this.spinAngle);
-    const ax = GLOBE_AXIS[0] * gw;
-    const ay = GLOBE_AXIS[1] * gw;
-    const az = GLOBE_AXIS[2] * gw + (1 - gw);
-    const al = Math.hypot(ax, ay, az) || 1;
     const dM: Mat3 | null =
-      Math.abs(this.spinSpeed) > 1e-6 && fw < 1
-        ? rotation([ax / al, ay / al, az / al], this.spinSpeed * (1 - fw))
+      gw > 0 && Math.abs(this.spinSpeed) > 1e-6 && fw < 1
+        ? rotation(GLOBE_AXIS, this.spinSpeed * gw * (1 - fw))
         : null;
+    const swirl = this.spinSpeed * (1 - fw);
+    const swirlGrip = SWIRL_GRIP * (1 - gw);
     const camera = R * CAMERA_DISTANCE;
 
     // Moon. Gas and water: it displaces fluid (potential flow round a moving sphere) and pushes a bow wave.
@@ -600,9 +606,16 @@ export class Simulation {
         vz[i] = dM[6] * a + dM[7] * b + dM[8] * c;
       }
 
-      // Home: the (turning) disc point blended toward the rotating sphere point, loosened by the scatter.
-      const dhx = (this.discX[i] * discCos - this.discY[i] * discSin) * re;
-      const dhy = (this.discX[i] * discSin + this.discY[i] * discCos) * re;
+      // Home: the (swirling) disc point blended toward the rotating sphere point, loosened by the scatter.
+      if (swirl) {
+        this.discTurn[i] += swirl * this.swirlRate[i];
+        if (this.discTurn[i] > Math.PI) this.discTurn[i] -= 2 * Math.PI;
+        else if (this.discTurn[i] < -Math.PI) this.discTurn[i] += 2 * Math.PI;
+      }
+      const turnCos = Math.cos(this.discTurn[i]);
+      const turnSin = Math.sin(this.discTurn[i]);
+      const dhx = (this.discX[i] * turnCos - this.discY[i] * turnSin) * re;
+      const dhy = (this.discX[i] * turnSin + this.discY[i] * turnCos) * re;
       const sx = this.sphereX[i];
       const sy = this.sphereY[i];
       const sz = this.sphereZ[i];
@@ -612,8 +625,8 @@ export class Simulation {
       // The disc's scatter turns with it; the globe's stays put as before.
       const scx = this.scatterX[i];
       const scy = this.scatterY[i];
-      const sdx = scx + (scx * discCos - scy * discSin - scx) * (1 - gw);
-      const sdy = scy + (scx * discSin + scy * discCos - scy) * (1 - gw);
+      const sdx = scx + (scx * turnCos - scy * turnSin - scx) * (1 - gw);
+      const sdy = scy + (scx * turnSin + scy * turnCos - scy) * (1 - gw);
       let hx = cx + dhx + (shx - dhx) * gw + sdx * scatter;
       let hy = cy + dhy + (shy - dhy) * gw + sdy * scatter;
       let hz = shz * gw + this.scatterZ[i] * scatter * gw;
@@ -946,6 +959,23 @@ export class Simulation {
         }
       }
 
+      // The swirl's own motion here: it carries loose particles round and doesn't count as being stirred up.
+      let tvx = 0;
+      let tvy = 0;
+      if (swirl) {
+        const want = swirl * this.swirlRate[i] * (1 - gw);
+        tvx = -(y[i] - cy) * want;
+        tvy = (x[i] - cx) * want;
+      }
+      if (swirl && swirlGrip) {
+        // Loose particles are carried round by the swirl itself, not only dragged by their home.
+        const sx = x[i] - cx;
+        const sy = y[i] - cy;
+        const r2 = sx * sx + sy * sy || 1;
+        const along = ((vx[i] - tvx) * -sy + (vy[i] - tvy) * sx) / r2;
+        ax -= -sy * along * swirlGrip * e;
+        ay -= sx * along * swirlGrip * e;
+      }
       const drag = damping * (1 - 0.06 * v * (1 - blast));
       let nvx = (vx[i] + ax) * drag;
       let nvy = (vy[i] + ay) * drag;
@@ -964,7 +994,7 @@ export class Simulation {
       y[i] += nvy;
       z[i] += nvz;
       ke += sp2;
-      const stir = Math.min(1, (Math.sqrt(sp2) - calm) * exciteGain);
+      const stir = Math.min(1, (Math.hypot(nvx - tvx, nvy - tvy, nvz) - calm) * exciteGain);
       excite[i] = stir > excite[i] ? excite[i] + (stir - excite[i]) * 0.5 : excite[i] * EXCITE_DECAY;
       if (excite[i] < burn * 0.85) excite[i] = burn * 0.85;
     }

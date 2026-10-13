@@ -265,6 +265,7 @@ class App implements ControlHost {
     this.bloom.update(t);
     // Particles jump from the loader as they're born; don't draw trails across that.
     this.renderer.tracers.reset();
+    this.renderer.resetStreaks();
     if (t > BLOOM_SECONDS * UI_REVEAL_AT) this.showUi();
     if (this.bloom.done(t)) this.endBloom();
   }
