@@ -47,6 +47,8 @@ const VAPOR_LIFE_TIGHT = 0.6;
  * travelling at EDDY_RATE radians per step). Evaporated gas is flung sideways VAPOR_FLING × speed.
  */
 const BODY_RADIUS = 0.08;
+/** Attract and repel: the pointer's pull or push on a fully tight shape, relative to loose. */
+const POLE_TIGHT = 2.5;
 /** Pointer energy (speed / POINTER_VAPOR_SPEED) a fully tight shape needs before it evaporates; none when loose. */
 const BREAK_ENERGY = 1.2;
 /** Pointer speed (px/step) at which fully tight fluid gives way completely (4 when loose). */
@@ -516,8 +518,14 @@ export class Simulation {
       );
     // Loose water flings easily, so the pointer is gentler there (see PhysicsMode.loosePointer).
     const pointerScale = lerp(1, mode.loosePointer, slider);
+    // Magnetic poles hold harder against a tight shape, whose springs otherwise hold it in place.
+    const poleBoost = mode.alwaysOn ? lerp(POLE_TIGHT, 1, slider) : 1;
     const gravity =
-      mode.pointerGravity * (mode.alwaysOn ? 1 : 0.25 + 0.75 * pointer.activity) * (R / 220) * pointerScale;
+      mode.pointerGravity *
+      (mode.alwaysOn ? 1 : 0.25 + 0.75 * pointer.activity) *
+      (R / 220) *
+      pointerScale *
+      poleBoost;
     const soft = Math.max(18, R * 0.13);
     const soft2 = soft * soft;
     const wakeR2 = (R * 0.35) ** 2;

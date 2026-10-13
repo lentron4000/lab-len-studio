@@ -43,7 +43,7 @@ Modes are defined in [`src/lab-mode.ts`](src/lab-mode.ts).
 | State       | Tight ↔ loose. Kicks push it looser by the Depth amount.                       |
 | Shape       | Disc or globe. The globe spins on a 23.4° axis, leaned toward you.             |
 | Spin, Orbit | One revolution / orbit per 32 bars … 1 beat, locked to the current tempo.      |
-| Physics     | Gas, water, or the pointer and moon as opposite / like magnetic poles.         |
+| Physics     | Gas, liquid, or the pointer and moon as opposite / like magnetic poles.        |
 | Source      | Off, demo kick (100 BPM), audio file, or live input.                           |
 | Tempo       | Detected tempo and its source. Tap, ½, ×2; Auto clears overrides.              |
 | Pulse       | Pulse on detected kicks, or on the beat grid (predicted, so it lands on time). |
@@ -160,7 +160,7 @@ Real recordings will be harder than synthetic ones; MIDI clock is the exact opti
 
 - Particles have a home position on a phyllotaxis disc and a Fibonacci sphere; the shape morphs between
   them. Opening toward cloud weakens the home springs, scatters the homes and hands over to each mode's
-  forces: a thermostat for gas, cohesion and viscosity for water, gaussian-reach poles for the magnets.
+  forces: a thermostat for gas, cohesion and viscosity for liquid, gaussian-reach poles for the magnets.
 - Pair interactions use a uniform grid on x/y with true 3D distances, scanning half the neighbourhood.
 - The moon's effect on fluids is potential flow around a moving sphere plus a bow-wave pressure term.
 - Physics runs in fixed 1/60 s steps (up to three per frame) and constants are scaled to the shape's
