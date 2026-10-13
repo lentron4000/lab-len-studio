@@ -37,8 +37,9 @@ const BEAM_FOCUS = 0.5;
 /** Top of the moon's Force slider. */
 const MOON_FORCE_MAX = 2;
 const BEAM_RESIDUAL = 0.25;
-/** Per-step condensing of evaporated particles: back in a few seconds. */
-const VAPOR_DECAY = Math.exp(-1 / 60 / 1.5);
+/** Seconds for evaporated particles to lose their energy (loose, and fully tight). */
+const VAPOR_LIFE = 1.5;
+const VAPOR_LIFE_TIGHT = 0.6;
 /**
  * Gas and water pointer: a solid body (radius in shape radii) the fluid parts round. FLOW_GRIP is how
  * firmly nearby fluid follows the flow round it; behind, WAKE_DRAG pulls the wake along after it and
@@ -46,6 +47,10 @@ const VAPOR_DECAY = Math.exp(-1 / 60 / 1.5);
  * travelling at EDDY_RATE radians per step). Evaporated gas is flung sideways VAPOR_FLING × speed.
  */
 const BODY_RADIUS = 0.08;
+/** Pointer energy (speed / POINTER_VAPOR_SPEED) a fully tight shape needs before it evaporates; none when loose. */
+const BREAK_ENERGY = 1.2;
+/** Pointer speed (px/step) at which fully tight fluid gives way completely (4 when loose). */
+const GIVE_SPEED_TIGHT = 24;
 /** Pointer speed (px/step) at which the body reaches full size. */
 const BODY_FULL_SPEED = 12;
 /** Share of the hold home the fluid lets go of where the body passes (near it and in its wake). */
@@ -422,7 +427,9 @@ export class Simulation {
     // Tight gas makes a shorter, quicker round trip than loose: less drift, an earlier turn, a harder pull.
     const looseness = slider;
     const vaporDrift = 0.2 * scale * lerp(0.85, 1, looseness);
-    const returnPace = lerp(1.9, 0.6, looseness);
+    const returnPace = lerp(3, 0.6, looseness);
+    // Tight vapour loses its energy quickly and heads home; loose lingers.
+    const vaporDecay = Math.exp(-1 / 60 / lerp(VAPOR_LIFE_TIGHT, VAPOR_LIFE, looseness));
     const vaporHold = lerp(0.42, VAPOR_HOLD, looseness);
     const scatter = R * 0.2 * e;
 
@@ -498,8 +505,15 @@ export class Simulation {
       (1 - fw) *
       POINTER_VAPOR *
       lerp(0.35, 1, slider) *
-      // Grows faster than the pointer's speed: a slow hand barely touches it, a fast sweep tears it.
-      Math.min(2, (Math.hypot(pointer.vx, pointer.vy) / POINTER_VAPOR_SPEED) ** 1.5);
+      // Energy from the pointer's speed, less what it takes to break the shape loose: tight needs a fast
+      // sweep before anything evaporates, loose gives way at once. Grows faster than the excess.
+      Math.min(
+        2,
+        Math.max(
+          0,
+          Math.hypot(pointer.vx, pointer.vy) / POINTER_VAPOR_SPEED - lerp(BREAK_ENERGY, 0, slider),
+        ) ** 1.5,
+      );
     // Loose water flings easily, so the pointer is gentler there (see PhysicsMode.loosePointer).
     const pointerScale = lerp(1, mode.loosePointer, slider);
     const gravity =
@@ -673,7 +687,7 @@ export class Simulation {
           ax += (dx / d) * pull;
           ay += (dy / d) * pull;
         }
-        const next = v * VAPOR_DECAY;
+        const next = v * vaporDecay;
         // Home (or nearly condensed): back to the ordinary spring.
         if (next < 0.02 || (v <= vaporHold && d < re * 0.03)) {
           vapor[i] = 0;
@@ -790,7 +804,12 @@ export class Simulation {
             ay += pux * sway;
             // Gas: what the body passes through evaporates; faster sweeps throw the vapour further out.
             if (sweepVapor && !vapor[i] && Math.random() < sweepVapor * core * fall) {
-              vapor[i] = 0.5 + 0.4 * Math.random();
+              // More energy, longer as vapour (it turns home once it drops below the hold level).
+              const energy = Math.min(1, pSpeed / (POINTER_VAPOR_SPEED * 2.5));
+              vapor[i] = Math.min(
+                0.95,
+                vaporHold + 0.05 + (0.9 - vaporHold) * energy * (0.6 + 0.4 * Math.random()),
+              );
               const fling = VAPOR_FLING * pSpeed * Math.sign(side || 1);
               vx[i] += -puy * fling;
               vy[i] += pux * fling;
@@ -798,7 +817,12 @@ export class Simulation {
           }
         }
         if (give) {
-          const g = FLUID_GIVE * pointerScale * Math.min(1, give * 1.5) * Math.min(1, pSpeed / 4);
+          // Tight holds firm against a slow hand (it snaps back); a fast one, or loose fluid, gives way.
+          const g =
+            FLUID_GIVE *
+            pointerScale *
+            Math.min(1, give * 1.5) *
+            Math.min(1, pSpeed / lerp(GIVE_SPEED_TIGHT, 4, slider));
           ax += (x[i] - hx) * ki * g;
           ay += (y[i] - hy) * ki * g;
         }
