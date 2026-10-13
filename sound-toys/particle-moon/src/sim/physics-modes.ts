@@ -46,6 +46,12 @@ export interface PhysicsMode {
    * speeding up, and some evaporate, drifting off before condensing back.
    */
   vapor: number;
+  /**
+   * Least share of the home spring kept as the State slider reaches fully loose (0 lets it vanish).
+   * Water keeps a trace, which is what holds its droplets small, round and apart; without it, the last
+   * stretch of the slider lets them wander together into a few lumpy blobs.
+   */
+  looseHold: number;
   /** Kicks travel out from the centre as a ripple instead of moving everything at once (0 or 1). */
   ripple: number;
   description: string;
@@ -76,6 +82,7 @@ export const PHYSICS_MODES: Record<PhysicsModeId, PhysicsMode> = {
     alwaysOn: false,
     vapor: 1,
     ripple: 0,
+    looseHold: 0,
     description:
       'Air. Molecules fly in straight lines and bounce off each other. Sweep the pointer through to push a current; it diffuses back.',
   },
@@ -100,6 +107,7 @@ export const PHYSICS_MODES: Record<PhysicsModeId, PhysicsMode> = {
     alwaysOn: false,
     vapor: 0,
     ripple: 1,
+    looseHold: 0.05,
     description:
       'Liquid. No fixed positions, only cohesion and surface tension. It swirls, pulls into tendrils and pools back together.',
   },
@@ -124,6 +132,7 @@ export const PHYSICS_MODES: Record<PhysicsModeId, PhysicsMode> = {
     alwaysOn: true,
     vapor: 0,
     ripple: 0,
+    looseHold: 0,
     description: 'The pointer and the moon are opposite poles. Particles are pulled in and pack around them.',
   },
   repel: {
@@ -147,6 +156,7 @@ export const PHYSICS_MODES: Record<PhysicsModeId, PhysicsMode> = {
     alwaysOn: true,
     vapor: 0,
     ripple: 0,
+    looseHold: 0,
     description:
       'The pointer and the moon are like poles. Particles are pushed aside and close in behind them.',
   },

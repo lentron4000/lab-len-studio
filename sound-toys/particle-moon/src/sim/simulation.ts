@@ -313,7 +313,8 @@ export class Simulation {
     const scale = R / REFERENCE_RADIUS;
     const k =
       lerp(
-        lerp(SOLID.spring, mode.spring, e) * (1 - (1 - mode.homeWeight) * Math.sqrt(e)),
+        lerp(SOLID.spring, mode.spring, e) *
+          Math.max(1 - (1 - mode.homeWeight) * Math.sqrt(e), mode.looseHold),
         summoning.strength,
         fw,
       ) *
