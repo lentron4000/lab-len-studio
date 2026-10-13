@@ -136,6 +136,13 @@ const BOND_FROM = 0.2;
 const BOND_MAX = 10;
 const BOND_PULL = 0.3;
 const BOND_GAP = 0.5;
+/** Repel: each zap clears a hole this many spacings across (radius) round its middle. */
+const BOND_SCATTER = 3;
+/** The zap: share of a bond's life spent snapping in, held until, release time (shares of life), glow. */
+const BOND_ATTACK = 0.06;
+const BOND_HOLD = 0.6;
+const BOND_RELEASE = 0.15;
+const BOND_FLASH = 0.8;
 /** 0 below a, 1 above b, smooth in between. */
 function smooth(a: number, b: number, v: number): number {
   const t = Math.min(1, Math.max(0, (v - a) / (b - a)));
@@ -631,7 +638,11 @@ export class Simulation {
     const excite = this.excite;
     // Attract bonds: none to see when tight; join in the middle; reach without touching when loose.
     const bondPull = this.updateBonds(slider, re) * BOND_PULL;
-    const bondRest = re * Math.sqrt(Math.PI / N) * BOND_GAP * smooth(0.6, 1, slider);
+    // Attract pulls a group in (stopping short when loose); repel blasts it out to a few spacings.
+    const bondSpacing = re * Math.sqrt(Math.PI / N);
+    const repelBonds = mode.pointerGravity < 0;
+    const bondRest =
+      mode.pointerGravity > 0 ? bondSpacing * BOND_GAP * smooth(0.6, 1, slider) : bondSpacing * BOND_SCATTER;
     for (let i = 0; i < N; i++) {
       // The body spins rigidly; physics runs on top of the rotation.
       if (dM) {
@@ -1031,10 +1042,31 @@ export class Simulation {
         ay -= sx * along * swirlGrip * e;
       }
       const bond = this.bondOf[i];
-      if (bond >= 0 && bondPull) {
+      if (bondPull && repelBonds) {
+        // Repel: each zap clears a hole round its middle; everything inside is pushed out to its edge.
+        for (const b of this.bonds) {
+          const dx = x[i] - b.cx;
+          const dy = y[i] - b.cy;
+          const dz = z[i] - b.cz;
+          const d2 = dx * dx + dy * dy + dz * dz;
+          if (d2 >= bondRest * bondRest) continue;
+          const t = b.age / b.life;
+          const env =
+            t < BOND_ATTACK ? t / BOND_ATTACK : t < BOND_HOLD ? 1 : Math.exp(-(t - BOND_HOLD) / BOND_RELEASE);
+          const d = Math.sqrt(d2) || 1;
+          const push = bondPull * env * (bondRest - d);
+          ax += (dx / d) * push;
+          ay += (dy / d) * push;
+          az += (dz / d) * push;
+          if (t < BOND_ATTACK && this.excite[i] < env * BOND_FLASH) this.excite[i] = env * BOND_FLASH;
+        }
+      } else if (bond >= 0 && bondPull) {
         const b = this.bonds[bond];
         const t = b.age / b.life;
-        const env = Math.sin(Math.PI * Math.min(1, t)); // eases in and releases
+        // A zap: snaps in over the first BOND_ATTACK of its life, holds briefly, then lets go.
+        const env =
+          t < BOND_ATTACK ? t / BOND_ATTACK : t < BOND_HOLD ? 1 : Math.exp(-(t - BOND_HOLD) / BOND_RELEASE);
+        if (t < BOND_ATTACK && this.excite[i] < env * BOND_FLASH) this.excite[i] = env * BOND_FLASH;
         const dx = b.cx - x[i];
         const dy = b.cy - y[i];
         const dz = b.cz - z[i];
@@ -1070,13 +1102,13 @@ export class Simulation {
   }
 
   /**
-   * Attract only: every second or so a random particle and its nearest few neighbours bond for 1.5–3 s,
-   * drawn toward their middle, then let go. Returns how strongly bonds pull at this State (0 when tight
+   * Attract and repel: every so often a random particle and its nearest neighbours bond briefly: zapped
+   * together (attract) or blasted apart (repel), then let go. Returns how strongly bonds pull at this State (0 when tight
    * or in another mode), and updates each bond's centre.
    */
   private updateBonds(slider: number, re: number): number {
     const { mode, x, y, z, count: n } = this;
-    const on = mode.alwaysOn && mode.pointerGravity > 0 ? smooth(BOND_FROM, BOND_FROM + 0.25, slider) : 0;
+    const on = mode.alwaysOn ? smooth(BOND_FROM, BOND_FROM + 0.25, slider) : 0;
     const dt = 1 / 60;
     for (const b of this.bonds) b.age += dt;
     const live = this.bonds.filter((b) => b.age < b.life);
@@ -1105,7 +1137,7 @@ export class Simulation {
         const members = [seed, ...near.slice(0, size - 1).map(([, j]) => j)];
         if (members.length >= 3) {
           const k = this.bonds.length;
-          this.bonds.push({ members, age: 0, life: 1.5 + Math.random() * 1.5, cx: 0, cy: 0, cz: 0 });
+          this.bonds.push({ members, age: 0, life: 1.2 + Math.random() * 0.8, cx: 0, cy: 0, cz: 0 });
           for (const m of members) this.bondOf[m] = k;
         }
       }
