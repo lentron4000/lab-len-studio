@@ -38,14 +38,14 @@ const BEAM_FOCUS = 0.5;
 const MOON_FORCE_MAX = 2;
 const BEAM_RESIDUAL = 0.25;
 /** Per-step condensing of evaporated particles: back in a few seconds. */
-const VAPOR_DECAY = Math.exp(-1 / 60 / 2);
+const VAPOR_DECAY = Math.exp(-1 / 60 / 1.5);
 /** Chance per step that gas under a fast-moving pointer evaporates, and the pointer speed (px/step) for full effect. */
 const POINTER_VAPOR = 0.15;
-const POINTER_VAPOR_SPEED = 15;
+const POINTER_VAPOR_SPEED = 18;
 /** Vapour above this drifts outward; below it, it's pulled home. */
-const VAPOR_HOLD = 0.25;
+const VAPOR_HOLD = 0.35;
 /** Pull home while condensing (px/step² at the reference radius, before the closeness boost). */
-const VAPOR_RETURN = 0.12;
+const VAPOR_RETURN = 0.02;
 /** Drift from home, in shape radii, at which an evaporating particle has fully faded. */
 const VAPOR_FADE_AT = 0.45;
 /** Rest between hits: at 100 bpm (REST_BEAT s) evaporation is as tuned; longer rests raise it, to REST_MAX. */
@@ -313,6 +313,7 @@ export class Simulation {
     const evaporate = mode.vapor * (1 - fw) * Math.min(0.9, 0.16 * drive ** 1.6 * this.rest);
     const vapor = this.vapor;
     const vaporDrift = 0.2 * scale;
+    const returnPace = lerp(1.5, 0.6, this.stateTarget);
     const scatter = R * 0.2 * e;
 
     // Shape morph and spin.
@@ -386,7 +387,8 @@ export class Simulation {
       mode.vapor *
       (1 - fw) *
       POINTER_VAPOR *
-      Math.min(1, Math.hypot(pointer.vx, pointer.vy) / POINTER_VAPOR_SPEED);
+      // Grows faster than the pointer's speed: a slow hand barely touches it, a fast sweep tears it.
+      Math.min(2, (Math.hypot(pointer.vx, pointer.vy) / POINTER_VAPOR_SPEED) ** 1.5);
     const gravity = mode.pointerGravity * (mode.alwaysOn ? 1 : 0.25 + 0.75 * pointer.activity) * (R / 220);
     const soft = Math.max(18, R * 0.13);
     const soft2 = soft * soft;
@@ -477,7 +479,9 @@ export class Simulation {
           ay += ((oy / od) * vaporDrift + (Math.random() - 0.5) * thermal * 2) * v;
         } else {
           // Condensing: pulled home, harder the closer it gets, so it lingers far out and rushes in.
-          const pull = (VAPOR_RETURN * scale * (1 - v / VAPOR_HOLD + 0.2)) / (0.15 + d / re);
+          // Ramps up steeply on approach; Tight pulls harder, Loose lets it linger.
+          const near = 0.1 + d / re;
+          const pull = (VAPOR_RETURN * scale * returnPace * (1 - v / VAPOR_HOLD + 0.2)) / (near * near);
           ax += (dx / d) * pull;
           ay += (dy / d) * pull;
         }
