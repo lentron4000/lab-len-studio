@@ -126,7 +126,7 @@ export class Renderer {
     const flash = ritual ? sim.excite : this.fireflies.flash;
     // Ritual glow follows the State slider, not the kicked state: on a near-solid setting, kicks that
     // briefly open the shape shouldn't bring the full glow back.
-    const poise = Math.pow(sim.stateTarget, 0.7);
+    const poise = Math.pow(sim.slider, 0.7);
     if (ritual) this.updateHeat(poise);
 
     this.sortIntoBands(re);

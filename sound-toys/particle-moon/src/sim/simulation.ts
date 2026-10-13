@@ -54,15 +54,30 @@ const REST_MIN = 0.5;
 const REST_MAX = 3;
 /** Depth velocity kept per step while the shape is flat. */
 const FLAT_Z_DAMPING = 0.93;
-/** Water: seconds for a kick's ripple to cross the shape, at Tight and at Loose; and rings alive at once. */
-const RIPPLE_SECONDS: readonly [number, number] = [0.45, 0.8];
+/**
+ * Water: a kick drops a stone in the middle. A train of RIPPLE_CRESTS rings, RIPPLE_WAVELENGTH apart (in
+ * shape radii), spreads out over RIPPLE_SECONDS (at Tight, at Loose), each weaker than the one before
+ * and fading as it widens. Up to MAX_RIPPLES kicks' worth at once.
+ */
+const RIPPLE_SECONDS: readonly [number, number] = [0.8, 1.3];
+const RIPPLE_CRESTS = 3;
+const RIPPLE_WAVELENGTH = 0.22;
 const MAX_RIPPLES = 6;
-/** Push at the ring's leading edge (and pull at its trailing edge), relative to a one-way push of the same size. */
-const RIPPLE_SWING = 3;
-/** How far a ring lifts what it passes toward the viewer (a bob), relative to its push. */
-const RIPPLE_BOB = 6;
-/** How far a full kick's ripple lifts the particles it passes, in shape radii. */
+/** A full kick's wave height (shape radii), and how firmly free droplets are carried along with the surface. */
 const RIPPLE_LIFT = 0.12;
+const RIPPLE_CARRY = 0.25;
+
+/**
+ * Surface displacement in a ripple train at `phase` (crests behind the front, 0–RIPPLE_CRESTS): out (along
+ * the radius) and up. The envelope rises and falls to zero smoothly, leading crests strongest, so the
+ * water ends exactly where it started once the train has passed.
+ */
+function rippleSurface(phase: number): [out: number, up: number] {
+  const t = phase / RIPPLE_CRESTS;
+  const envelope = Math.sin(Math.PI * t) ** 2 * (1 - 0.5 * t);
+  const a = 2 * Math.PI * phase;
+  return [envelope * Math.sin(a), envelope * Math.cos(a)];
+}
 /** Strongest pad hit: three times a full kick. */
 export const BLAST_MAX = 3;
 /** Hit × Depth at which the vapor blast is complete: the hardest pad at the default Depth. */
@@ -149,7 +164,7 @@ export class Simulation {
   /** 0–1: how far past a full kick the last hit went. Opens the shape fully and vaporizes it. */
   private blast = 0;
   /** Water: kicks travelling outward as rings (radius in px, impulse, glow). */
-  private ripples: { r: number; amp: number; glow: number; lift: number }[] = [];
+  private ripples: { r: number; strength: number; glow: number; fade: number }[] = [];
   private pendingShock = 0;
   /** Steps run, and the step of the last hit: the gap between hits sets how readily gas evaporates. */
   private steps = 0;
@@ -200,6 +215,11 @@ export class Simulation {
       this.scatterY[i] = gaussian();
       this.scatterZ[i] = gaussian();
     }
+  }
+
+  /** The State slider as this mode uses it: capped at its loosest (see PhysicsMode.looseCap). */
+  get slider(): number {
+    return Math.min(this.stateTarget, this.mode.looseCap);
   }
 
   get viewport(): Readonly<Viewport> {
@@ -277,6 +297,8 @@ export class Simulation {
   step(): number {
     this.steps++;
     const { mode, moon, pointer, count: N, x, y, z, vx, vy, vz } = this;
+    // The State slider, capped at the mode's loosest (water stops at 75%).
+    const slider = this.slider;
     const { radius: R, cx, cy, width: W, height: H } = this.view;
 
     // Gas holds a kick's opening a little longer, so its churn has time to show.
@@ -284,9 +306,7 @@ export class Simulation {
     this.blast *= 0.965;
     const blast = this.blast;
     // A rippling mode doesn't open all at once on a kick; the ripple carries the kick instead.
-    this.state =
-      this.stateTarget +
-      (1 - this.stateTarget) * Math.min(1, this.pulse * this.depth * (1 - mode.ripple) + blast);
+    this.state = slider + (1 - slider) * Math.min(1, this.pulse * this.depth * (1 - mode.ripple) + blast);
     const e = this.state;
     // In the blast range the shockwave grows much faster than the drive: that's what vaporizes.
     const drive = this.pendingShock * this.depth;
@@ -294,8 +314,7 @@ export class Simulation {
     const shockGlow = Math.min(1, this.pendingShock * 0.35 + drive * 0.5);
     this.pendingShock = 0;
     if (shock && mode.ripple) {
-      // The ring both pushes particles and lifts their homes outward as it passes (a travelling bulge).
-      this.ripples.push({ r: 0, amp: shock, glow: shockGlow, lift: Math.min(1.5, drive) * R * RIPPLE_LIFT });
+      this.ripples.push({ r: 0, strength: Math.min(1.5, drive), glow: shockGlow, fade: 1 });
       if (this.ripples.length > MAX_RIPPLES) this.ripples.shift();
     }
     const instantShock = shock * (1 - mode.ripple);
@@ -313,29 +332,34 @@ export class Simulation {
     const scale = R / REFERENCE_RADIUS;
     const k =
       lerp(
-        lerp(SOLID.spring, mode.spring, e) *
-          Math.max(1 - (1 - mode.homeWeight) * Math.sqrt(e), mode.looseHold),
+        lerp(SOLID.spring, mode.spring, e) * (1 - (1 - mode.homeWeight) * Math.sqrt(e)),
         summoning.strength,
         fw,
       ) *
       (1 - 0.85 * blast);
     const containK = mode.contain * e * (1 - fw) * (1 - blast);
     const re = this.effectiveRadius();
-    // Ripples cross the shape in RIPPLE_SECONDS: quicker when tight, slower when loose.
-    const rippleSpeed = re / (60 * lerp(RIPPLE_SECONDS[0], RIPPLE_SECONDS[1], this.stateTarget));
-    const rippleWidth = re * 0.14;
-    const rippleShare = rippleSpeed / (rippleWidth * Math.sqrt(Math.PI));
-    // Loose droplets ride the wave like things floating on it: a little more swing, and a bob.
-    const rippleSwing = RIPPLE_SWING * lerp(1, 1.4, this.stateTarget ** 2);
-    for (const ring of this.ripples) ring.r += rippleSpeed;
-    this.ripples = this.ripples.filter((ring) => ring.r < re * 1.8);
+    // Ripples: quicker when tight, slower when loose; they die out once the last crest has left the shape.
+    const rippleSpeed = re / (60 * lerp(RIPPLE_SECONDS[0], RIPPLE_SECONDS[1], slider));
+    const wavelength = re * RIPPLE_WAVELENGTH;
+    const train = wavelength * RIPPLE_CRESTS;
+    for (const ring of this.ripples) {
+      ring.r += rippleSpeed;
+      ring.fade *= 0.992;
+    }
+    this.ripples = this.ripples.filter((ring) => ring.r - train < re * 1.3);
     const ripples = this.ripples;
+    const waveLift = R * RIPPLE_LIFT;
+    // Held (tight) water follows the wave through its resting places; free (loose) droplets are carried
+    // along at the surface's own speed, like something floating, more firmly the looser it is.
+    const waveCarry = RIPPLE_CARRY * slider;
+    const phaseRate = rippleSpeed / wavelength;
     const containR = re * mode.containRadius;
     // Gas: the openness a kick adds (beyond the slider) makes it wander and slow, not speed up.
-    const kickOpen = this.stateTarget < 1 ? Math.max(0, (e - this.stateTarget) / (1 - this.stateTarget)) : 0;
+    const kickOpen = slider < 1 ? Math.max(0, (e - slider) / (1 - slider)) : 0;
     // (Not during a blast: that should still fling it.)
     const gassy = Math.min(1, mode.vapor * kickOpen * (1 - fw) * (1 - blast) * this.rest);
-    const targetSpeed = mode.speed * lerp(e, this.stateTarget, mode.vapor) * scale * (1 - fw);
+    const targetSpeed = mode.speed * lerp(e, slider, mode.vapor) * scale * (1 - fw);
     const damping = lerp(lerp(SOLID.damping, mode.damping, e), 0.9, fw) * (1 - 0.1 * gassy);
     const formR = re * FORMATION_SCALE * (1 + 0.3 * burn);
     const thermal = (lerp(SOLID.thermal, mode.thermal, e) * (1 + 10 * gassy) + burn * 1.5) * scale;
@@ -343,7 +367,7 @@ export class Simulation {
     const evaporate = mode.vapor * (1 - fw) * Math.min(0.9, 0.16 * drive ** 1.6 * this.rest);
     const vapor = this.vapor;
     // Tight gas makes a shorter, quicker round trip than loose: less drift, an earlier turn, a harder pull.
-    const looseness = this.stateTarget;
+    const looseness = slider;
     const vaporDrift = 0.2 * scale * lerp(0.85, 1, looseness);
     const returnPace = lerp(1.9, 0.6, looseness);
     const vaporHold = lerp(0.42, VAPOR_HOLD, looseness);
@@ -420,10 +444,13 @@ export class Simulation {
       mode.vapor *
       (1 - fw) *
       POINTER_VAPOR *
-      lerp(0.35, 1, this.stateTarget) *
+      lerp(0.35, 1, slider) *
       // Grows faster than the pointer's speed: a slow hand barely touches it, a fast sweep tears it.
       Math.min(2, (Math.hypot(pointer.vx, pointer.vy) / POINTER_VAPOR_SPEED) ** 1.5);
-    const gravity = mode.pointerGravity * (mode.alwaysOn ? 1 : 0.25 + 0.75 * pointer.activity) * (R / 220);
+    // Loose water flings easily, so the pointer is gentler there (see PhysicsMode.loosePointer).
+    const pointerScale = lerp(1, mode.loosePointer, slider);
+    const gravity =
+      mode.pointerGravity * (mode.alwaysOn ? 1 : 0.25 + 0.75 * pointer.activity) * (R / 220) * pointerScale;
     const soft = Math.max(18, R * 0.13);
     const soft2 = soft * soft;
     const wakeR2 = (R * 0.35) ** 2;
@@ -438,7 +465,7 @@ export class Simulation {
     const vmax = 25 * scale;
     // Excitation: speed above the mode's resting motion at the slider's state (gas always flies; that
     // alone shouldn't glow, but a kick that heats it should).
-    const calm = mode.speed * this.stateTarget * scale * 1.15 + EXCITE_CALM * scale;
+    const calm = mode.speed * slider * scale * 1.15 + EXCITE_CALM * scale;
     const exciteGain = 1 / (EXCITE_FULL * scale);
     const excite = this.excite;
     for (let i = 0; i < N; i++) {
@@ -470,20 +497,38 @@ export class Simulation {
       let hx = cx + dhx + (shx - dhx) * gw + this.scatterX[i] * scatter;
       let hy = cy + dhy + (shy - dhy) * gw + this.scatterY[i] * scatter;
       let hz = shz * gw + this.scatterZ[i] * scatter * gw;
+      // Ripples: where this particle sits in each passing wave train. The surface moves in small circles:
+      // out and up on a crest, back and down in the trough.
+      let waveOut = 0;
+      let waveVOut = 0;
+      let waveVUp = 0;
+      let waveR = 1;
       if (ripples.length) {
         const px = x[i] - cx;
         const py = y[i] - cy;
-        const pz = z[i];
-        const pd = Math.hypot(px, py, pz) || 1;
-        let lift = 0;
+        const pd = Math.hypot(px, py) || 1;
+        waveR = pd;
+        const spread = 1 / (1 + (1.5 * pd) / re); // weaker as it widens, like a real ripple
+        let waveUp = 0;
         for (const ring of ripples) {
-          const q = (pd - ring.r) / rippleWidth;
-          if (q * q < 9) lift += ring.lift * Math.exp(-q * q);
+          const behind = ring.r - pd;
+          if (behind <= 0 || behind >= train) continue;
+          const phase = behind / wavelength;
+          const size = ring.strength * ring.fade * spread * waveLift;
+          const [out, up] = rippleSurface(phase);
+          const [outNext, upNext] = rippleSurface(phase + 0.01);
+          waveOut += out * size;
+          waveUp += up * size;
+          // The surface's own velocity (px/step), which carries anything floating on it.
+          waveVOut += ((outNext - out) / 0.01) * phaseRate * size;
+          waveVUp += ((upNext - up) / 0.01) * phaseRate * size;
+          const glow = ring.glow * ring.fade * spread * Math.max(0, out) * 2;
+          if (this.excite[i] < glow) this.excite[i] = glow;
         }
-        if (lift) {
-          hx += (px / pd) * lift;
-          hy += (py / pd) * lift;
-          hz += (pz / pd) * lift;
+        if (waveOut || waveUp) {
+          hx += (px / pd) * waveOut;
+          hy += (py / pd) * waveOut;
+          hz += waveUp * 0.5;
         }
       }
       if (fw > 0) {
@@ -505,23 +550,15 @@ export class Simulation {
       const ox = x[i] - cx;
       const oy = y[i] - cy;
       const oz = z[i];
-      if (ripples.length) {
-        // Each ring is a wave: it pushes outward as it arrives and pulls back in as it passes, so particles
-        // bob out and back with no net drift (loose water would otherwise pile up against its wall).
-        const od = Math.hypot(ox, oy, oz) || 1;
-        const rim = 0.3 + 0.7 * Math.min(1, od / re);
-        for (const ring of ripples) {
-          const q = (od - ring.r) / rippleWidth;
-          if (q * q > 9) continue;
-          const g = Math.exp(-q * q);
-          const f = (ring.amp * rim * rippleSwing * q * g * rippleShare) / od;
-          vx[i] += ox * f;
-          vy[i] += oy * f;
-          vz[i] += oz * f;
-          // The crest lifts what it passes toward the viewer, then it settles: a bob, felt most when loose.
-          vz[i] += ring.amp * RIPPLE_BOB * this.stateTarget * q * g * rippleShare;
-          if (this.excite[i] < ring.glow * rim * g) this.excite[i] = ring.glow * rim * g;
-        }
+      if (waveCarry && (waveVOut || waveVUp)) {
+        // Carried by the surface: eased toward its velocity, so it floats out, up, back, down and ends
+        // where it started.
+        const ux = ox / waveR;
+        const uy = oy / waveR;
+        const vOut = vx[i] * ux + vy[i] * uy;
+        ax += ux * (waveVOut - vOut) * waveCarry;
+        ay += uy * (waveVOut - vOut) * waveCarry;
+        az += (waveVUp * 0.5 - vz[i]) * waveCarry;
       }
       if (instantShock) {
         const od = Math.hypot(ox, oy, oz) || 1;
@@ -608,7 +645,7 @@ export class Simulation {
         ax += gravity * dx * inv;
         ay += gravity * dy * inv;
         if (d2 < wakeR2) {
-          const w = mode.pointerWake * (1 - d2 / wakeR2);
+          const w = mode.pointerWake * pointerScale * (1 - d2 / wakeR2);
           ax += pointer.vx * w;
           ay += pointer.vy * w;
           // Gas: sweeping through it evaporates what the pointer passes; the wake drags it into a trail.
