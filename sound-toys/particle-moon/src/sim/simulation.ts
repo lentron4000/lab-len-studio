@@ -111,6 +111,8 @@ const BLAST_RELEASE = 0.85;
 const BLAST_RECHARGE = 2.5;
 /** How much harder than a full kick the shockwave pushes at the top of a blast. */
 const BLAST_PUSH = 7.5;
+/** Seconds to morph between disc and globe. */
+const MORPH_SECONDS = 1.6;
 /** Strongest pad hit: three times a full kick. */
 export const BLAST_MAX = 3;
 /** Hit × Depth at which the vapor blast is complete: the hardest pad at the default Depth. */
@@ -182,6 +184,8 @@ export class Simulation {
   state = 0.5;
   /** Current disc → globe blend. */
   globe = 0;
+  /** Linear progress of the disc ↔ globe morph (0–1); `globe` is it eased. */
+  private morph = 0;
   /** Spin speed in radians per step. */
   spinSpeed = 0;
 
@@ -445,8 +449,11 @@ export class Simulation {
     const scatter = R * 0.2 * e;
 
     // Shape morph and spin.
-    this.globe += (this.shapeTarget - this.globe) * 0.04;
-    if (Math.abs(this.shapeTarget - this.globe) < 1e-3) this.globe = this.shapeTarget;
+    // Timed S-curve: starts gently, glides, settles, rather than lurching off at full speed.
+    const morphStep = 1 / (60 * MORPH_SECONDS);
+    this.morph += Math.max(-morphStep, Math.min(morphStep, this.shapeTarget - this.morph));
+    const m = this.morph;
+    this.globe = m * m * m * (m * (m * 6 - 15) + 10);
     const gw = this.globe;
     const targetSpin = gw > 0 ? angularStep(this.spinBars, this.bpm) : 0;
     this.spinSpeed += (targetSpin - this.spinSpeed) * 0.04;
