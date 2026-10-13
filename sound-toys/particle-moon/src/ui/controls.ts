@@ -61,7 +61,10 @@ export function createAudioListener(): AudioEngineListener {
  * Binds the control panel to the app. Returns `refreshTempoLabels`, which re-renders the
  * spin and orbit lengths (they're shown in seconds, so they change with the tempo).
  */
-export function bindControls(host: ControlHost): { refreshTempoLabels: () => void } {
+export function bindControls(host: ControlHost): {
+  refreshTempoLabels: () => void;
+  setPanel: (open: boolean, focus?: boolean) => void;
+} {
   const { sim, transport, audio } = host;
   const panel = byId('panel');
 
@@ -187,11 +190,11 @@ export function bindControls(host: ControlHost): { refreshTempoLabels: () => voi
   // ---- Panel visibility and shortcuts
   const hideBtn = byId('hide-ctl', HTMLButtonElement);
   const showBtn = byId('show-ctl', HTMLButtonElement);
-  const setPanel = (open: boolean): void => {
+  const setPanel = (open: boolean, focus = true): void => {
     panel.hidden = !open;
     hideBtn.hidden = !open;
     showBtn.hidden = open;
-    (open ? hideBtn : showBtn).focus({ preventScroll: true });
+    if (focus) (open ? hideBtn : showBtn).focus({ preventScroll: true });
     host.setBare(!open);
     host.relayout();
   };
@@ -219,5 +222,5 @@ export function bindControls(host: ControlHost): { refreshTempoLabels: () => voi
     return looks[(i + 1) % looks.length].value as Look;
   }
 
-  return { refreshTempoLabels };
+  return { refreshTempoLabels, setPanel };
 }

@@ -90,7 +90,8 @@ class App implements ControlHost {
     this.sim.pointer.attach(this.canvas);
     byId('nn').textContent = this.sim.count.toLocaleString();
 
-    ({ refreshTempoLabels: this.refreshTempoLabels } = bindControls(this));
+    const controls = bindControls(this);
+    this.refreshTempoLabels = controls.refreshTempoLabels;
     // Locked modes hide the look switch; formations (and their controls) only where the mode has them.
     byId('look-row').hidden = this.mode.look !== null;
     byId('summon-row').hidden = byId('intensity-row').hidden = !this.mode.formations;
@@ -107,6 +108,8 @@ class App implements ControlHost {
       onPressure,
     );
     this.setLook(this.mode.look ?? savedLook());
+    // Opens with the controls collapsed: just the shape. Moving the pointer shows the Controls button.
+    controls.setPanel(false, false);
 
     window.addEventListener('resize', () => {
       this.resize();

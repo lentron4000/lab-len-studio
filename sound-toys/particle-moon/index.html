@@ -167,7 +167,7 @@
           <div class="label" id="state-label">State</div>
           <div class="slider">
             <span>Solid</span>
-            <input id="state" type="range" min="0" max="1000" value="500" aria-labelledby="state-label" />
+            <input id="state" type="range" min="0" max="1000" value="150" aria-labelledby="state-label" />
             <span>Cloud</span>
           </div>
         </div>
@@ -284,19 +284,21 @@
           <fieldset>
             <legend>Moon</legend>
             <div class="modes" role="radiogroup" aria-label="Moon">
-              <label><input type="radio" name="moon" id="moon-off" value="off" /><span>Off</span></label>
-              <label><input type="radio" name="moon" id="moon-on" value="on" checked /><span>On</span></label>
+              <label
+                ><input type="radio" name="moon" id="moon-off" value="off" checked /><span>Off</span></label
+              >
+              <label><input type="radio" name="moon" id="moon-on" value="on" /><span>On</span></label>
             </div>
           </fieldset>
         </div>
-        <div class="row" id="orbit-row">
+        <div class="row" id="orbit-row" hidden>
           <div class="label" id="orbit-label">Orbit</div>
           <div class="slider">
             <input id="orbit" type="range" min="0" max="8" step="1" value="3" aria-labelledby="orbit-label" />
             <output id="orbit-out" class="spin-out" for="orbit">8 bars</output>
           </div>
         </div>
-        <div class="row" id="force-row">
+        <div class="row" id="force-row" hidden>
           <div class="label" id="force-label">Force</div>
           <div class="slider">
             <input id="mforce" type="range" min="0" max="200" value="100" aria-labelledby="force-label" />

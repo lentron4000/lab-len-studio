@@ -5,6 +5,7 @@ import { Simulation } from '../src/sim/simulation';
 it('an untouched gas disc stays calm with the moon passing through it', () => {
   const sim = new Simulation(1500);
   sim.mode = PHYSICS_MODES.gas;
+  sim.moon.enabled = true;
   sim.setViewport({ width: 1440, height: 900, radius: 300, cx: 720, cy: 450 }, true);
   for (let i = 0; i < 10 * 60; i++) sim.step();
   // Then the worst frame over the next 20 seconds.

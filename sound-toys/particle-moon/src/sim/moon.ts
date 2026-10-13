@@ -12,7 +12,7 @@ const MOON_RADIUS = 0.22; // × shape radius
 
 /** The moon: position, velocity and size in screen pixels (z toward the viewer). */
 export class Moon {
-  enabled = true;
+  enabled = false;
   /** Bars per orbit, from the Orbit slider. */
   bars = 8;
   /** Force multiplier, from the Force slider. */
