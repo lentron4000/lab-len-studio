@@ -169,7 +169,7 @@ export class Renderer {
           this.tracers.record(i, qx, qy);
           const f = Math.max(flash[i], comet[i] * trails);
           // Evaporating particles have lost mass: smaller and fainter.
-          const r = dot * ps * (ritual ? restSize + swell * f : 2.2 + bloom * f) * (1 - 0.5 * vapor[i]);
+          const r = dot * ps * (ritual ? restSize + swell * f : 2.2 + bloom * f) * (1 - 0.75 * vapor[i]);
           const rim = 1 - limb * (1 - Math.min(1, Math.abs(z[i]) / re));
           // Ritual rests brighter: at rest it's all deep red, which needs more weight to read on black.
           const rest = ritual ? Math.min(0.85, base * restLift) : base;
@@ -189,7 +189,7 @@ export class Renderer {
           const qx = cx + (x[i] - cx) * ps;
           const qy = cy + (y[i] - cy) * ps;
           this.tracers.record(i, qx, qy);
-          const r = dot * ps * (1 - 0.6 * vapor[i]);
+          const r = dot * ps * (1 - 0.75 * vapor[i]);
           const px = qx + (Math.random() - 0.5) * 2 * jitter;
           const py = qy + (Math.random() - 0.5) * 2 * jitter;
           ctx.moveTo(px + r, py);

@@ -37,8 +37,10 @@ const BEAM_FOCUS = 0.5;
 /** Top of the moon's Force slider. */
 const MOON_FORCE_MAX = 2;
 const BEAM_RESIDUAL = 0.25;
-/** Per-step condensing of evaporated particles: back in about two seconds. */
-const VAPOR_DECAY = Math.exp(-1 / 60 / 1.8);
+/** Per-step condensing of evaporated particles: back in a few seconds. */
+const VAPOR_DECAY = Math.exp(-1 / 60 / 2);
+/** Vapour above this has no pull home at all. */
+const VAPOR_HOLD = 0.25;
 /** Depth velocity kept per step while the shape is flat. */
 const FLAT_Z_DAMPING = 0.93;
 /** Strongest pad hit: three times a full kick. */
@@ -242,7 +244,8 @@ export class Simulation {
     const { mode, moon, pointer, count: N, x, y, z, vx, vy, vz } = this;
     const { radius: R, cx, cy, width: W, height: H } = this.view;
 
-    this.pulse *= 0.925;
+    // Gas holds a kick's opening a little longer, so its churn has time to show.
+    this.pulse *= lerp(0.925, 0.955, this.mode.vapor);
     this.blast *= 0.965;
     const blast = this.blast;
     this.state = this.stateTarget + (1 - this.stateTarget) * Math.min(1, this.pulse * this.depth + blast);
@@ -276,15 +279,16 @@ export class Simulation {
     const containR = re * mode.containRadius;
     // Gas: the openness a kick adds (beyond the slider) makes it wander and slow, not speed up.
     const kickOpen = this.stateTarget < 1 ? Math.max(0, (e - this.stateTarget) / (1 - this.stateTarget)) : 0;
-    const gassy = mode.vapor * kickOpen * (1 - fw);
+    // (Not during a blast: that should still fling it.)
+    const gassy = mode.vapor * kickOpen * (1 - fw) * (1 - blast);
     const targetSpeed = mode.speed * lerp(e, this.stateTarget, mode.vapor) * scale * (1 - fw);
-    const damping = lerp(lerp(SOLID.damping, mode.damping, e), 0.9, fw) * (1 - 0.05 * gassy);
+    const damping = lerp(lerp(SOLID.damping, mode.damping, e), 0.9, fw) * (1 - 0.1 * gassy);
     const formR = re * FORMATION_SCALE * (1 + 0.3 * burn);
-    const thermal = (lerp(SOLID.thermal, mode.thermal, e) * (1 + 3 * gassy) + burn * 1.5) * scale;
+    const thermal = (lerp(SOLID.thermal, mode.thermal, e) * (1 + 10 * gassy) + burn * 1.5) * scale;
     // Share of particles a kick evaporates: grows with the hit's force, mostly from the edge.
-    const evaporate = mode.vapor * (1 - fw) * Math.min(0.9, 0.1 * drive ** 1.6);
+    const evaporate = mode.vapor * (1 - fw) * Math.min(0.9, 0.16 * drive ** 1.6);
     const vapor = this.vapor;
-    const vaporDrift = 0.035 * scale;
+    const vaporDrift = 0.2 * scale;
     const scatter = R * 0.2 * e;
 
     // Shape morph and spin.
@@ -407,9 +411,9 @@ export class Simulation {
         hy += (cy + summoning.ty[i] * formR - hy) * fw;
         hz -= hz * fw;
       }
-      // Evaporated particles have mostly lost their pull home.
       const v = vapor[i];
-      const ki = v ? k * (1 - 0.9 * v) : k;
+      // No pull home while mostly vapour; it returns over the last stretch of condensing.
+      const ki = v > VAPOR_HOLD ? 0 : k * (1 - v / VAPOR_HOLD) ** 2;
       let ax = (hx - x[i]) * ki;
       let ay = (hy - y[i]) * ki;
       let az = (hz - z[i]) * ki - z[i] * zPin;
