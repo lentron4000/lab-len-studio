@@ -22,6 +22,8 @@ import {
 import { Tracers } from './tracers';
 
 const BANDS = 4;
+/** Extra vibration on particles huddled round an attracting mouse. */
+const HUDDLE_BUZZ = 0.45;
 /** At full drift an evaporating particle is drawn this much smaller and fainter. */
 const VAPOR_SHRINK = 0.8;
 const VAPOR_FAINT = 0.85;
@@ -108,7 +110,7 @@ export class Renderer {
     const { ctx, sim, look } = this;
     const glow = look !== 'day';
     const ritual = look === 'ritual';
-    const { x, y, z, count: N, moon, vaporFade: fade } = sim;
+    const { x, y, z, count: N, moon, vaporFade: fade, huddle } = sim;
     const { radius: R, cx, cy } = sim.viewport;
     const sprites = this.sprites[ritual ? 'ritual' : 'night'];
 
@@ -188,8 +190,8 @@ export class Renderer {
           const rest = ritual ? Math.min(0.85, base * restLift) : base;
           ctx.globalAlpha =
             Math.min(1, (rest * rim + (1 - rest) * f * flashGain) * bandAlpha) * (1 - VAPOR_FAINT * fade[i]);
-          const px = qx + (Math.random() - 0.5) * 2 * jitter;
-          const py = qy + (Math.random() - 0.5) * 2 * jitter;
+          const px = qx + (Math.random() - 0.5) * 2 * jitter * (1 + HUDDLE_BUZZ * huddle[i]);
+          const py = qy + (Math.random() - 0.5) * 2 * jitter * (1 + HUDDLE_BUZZ * huddle[i]);
           ctx.drawImage(sprites[colourOf[i]], px - r, py - r, r * 2, r * 2);
           if (ritual && f > EMBER_HEAT && Math.random() < emberRate * f) this.embers.spawn(px, py, f, R);
         }
@@ -203,8 +205,8 @@ export class Renderer {
           const qx = cx + (x[i] - cx) * ps;
           const qy = cy + (y[i] - cy) * ps;
           this.tracers.record(i, qx, qy);
-          const px = qx + (Math.random() - 0.5) * 2 * jitter;
-          const py = qy + (Math.random() - 0.5) * 2 * jitter;
+          const px = qx + (Math.random() - 0.5) * 2 * jitter * (1 + HUDDLE_BUZZ * huddle[i]);
+          const py = qy + (Math.random() - 0.5) * 2 * jitter * (1 + HUDDLE_BUZZ * huddle[i]);
           if (fade[i] > 0.02) {
             // Drawn on their own below, so each can fade.
             this.fadeX[fading] = px;

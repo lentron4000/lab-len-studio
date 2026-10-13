@@ -49,6 +49,9 @@ const VAPOR_LIFE_TIGHT = 0.6;
 const BODY_RADIUS = 0.08;
 /** Attract and repel: the pointer's pull or push on a fully tight shape, relative to loose. */
 const POLE_TIGHT = 2.5;
+/** Attract: particles near the mouse (within about HUDDLE_REACH shape radii) push each other HUDDLE_PACK less. */
+const HUDDLE_REACH = 0.25;
+const HUDDLE_PACK = 0.33;
 /** Pointer energy (speed / POINTER_VAPOR_SPEED) a fully tight shape needs before it evaporates; none when loose. */
 const BREAK_ENERGY = 1.2;
 /** Pointer speed (px/step) at which fully tight fluid gives way completely (4 when loose). */
@@ -149,6 +152,11 @@ export class Simulation {
    * and it drifts away, then condenses back over a couple of seconds.
    */
   readonly vapor: Float32Array;
+  /**
+   * 0–1 per particle: how close it is to an attracting mouse. Those particles pack tighter and buzz
+   * harder (the moon's pile is left as it is).
+   */
+  readonly huddle: Float32Array;
   /** 0–1 per particle: how far an evaporating particle has drifted from home. It shrinks and fades by this. */
   readonly vaporFade: Float32Array;
   readonly pointer = new Pointer();
@@ -228,6 +236,7 @@ export class Simulation {
     this.scatterZ = f();
     this.excite = f();
     this.vapor = f();
+    this.huddle = f();
     this.vaporFade = f();
     this.summoning = new Summoning(count);
     this.relX = f();
@@ -529,6 +538,7 @@ export class Simulation {
     const soft = Math.max(18, R * 0.13);
     const soft2 = soft * soft;
     const wakeR2 = (R * 0.35) ** 2;
+    const huddleReach2 = (R * HUDDLE_REACH) ** 2;
     // Gas and water: the pointer is a solid body moving through the fluid (see the fluid branch below).
     const fluidPointer = !mode.alwaysOn;
     const pvx = pointer.vx;
@@ -740,12 +750,14 @@ export class Simulation {
           vy[i] = Math.sin(a) * targetSpeed;
         }
       }
+      this.huddle[i] = 0;
       if (pointer.active && !fluidPointer) {
         // Attract and repel: the pointer is a magnetic pole. It acts where the particle appears on screen.
         const ps = camera / (camera - z[i]);
         const dx = pointer.x - (cx + ox * ps);
         const dy = pointer.y - (cy + oy * ps);
         const d2 = dx * dx + dy * dy;
+        if (gravity > 0) this.huddle[i] = Math.exp(-d2 / huddleReach2);
         const inv = 1 / Math.pow(d2 + soft2, 1.5);
         ax += gravity * dx * inv;
         ay += gravity * dy * inv;
@@ -941,7 +953,7 @@ export class Simulation {
 
   /** Particle–particle repulsion, cohesion and viscosity over a uniform grid (half-neighbourhood scan). */
   private interact(re: number, e: number, scale: number, gw: number, W: number, H: number): void {
-    const { mode, count: N, x, y, z, vx, vy, vz, next } = this;
+    const { mode, count: N, x, y, z, vx, vy, vz, next, huddle } = this;
     const spacing = re * Math.sqrt(Math.PI / N) * (1 + gw);
     const h = mode.range * spacing;
     const cols = Math.ceil(W / h) + 2;
@@ -975,7 +987,8 @@ export class Simulation {
             if (d2 >= h2 || d2 < 1e-6) continue;
             const d = Math.sqrt(d2);
             const q = 1 - d / h;
-            const push = rep * q * q - coh * q * (1 - q);
+            const close = 1 - HUDDLE_PACK * Math.max(huddle[i], huddle[j]);
+            const push = rep * close * q * q - coh * q * (1 - q);
             const nx = dx / d;
             const ny = dy / d;
             const nz = dz / d;
