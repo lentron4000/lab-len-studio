@@ -54,6 +54,11 @@ const REST_MIN = 0.5;
 const REST_MAX = 3;
 /** Depth velocity kept per step while the shape is flat. */
 const FLAT_Z_DAMPING = 0.93;
+/** Water: seconds for a kick's ripple to cross the shape, at Tight and at Loose; and rings alive at once. */
+const RIPPLE_SECONDS: readonly [number, number] = [0.45, 0.8];
+const MAX_RIPPLES = 6;
+/** How far a full kick's ripple lifts the particles it passes, in shape radii. */
+const RIPPLE_LIFT = 0.12;
 /** Strongest pad hit: three times a full kick. */
 export const BLAST_MAX = 3;
 /** Hit × Depth at which the vapor blast is complete: the hardest pad at the default Depth. */
@@ -139,6 +144,8 @@ export class Simulation {
   private pulse = 0;
   /** 0–1: how far past a full kick the last hit went. Opens the shape fully and vaporizes it. */
   private blast = 0;
+  /** Water: kicks travelling outward as rings (radius in px, impulse, glow). */
+  private ripples: { r: number; amp: number; glow: number; lift: number }[] = [];
   private pendingShock = 0;
   /** Steps run, and the step of the last hit: the gap between hits sets how readily gas evaporates. */
   private steps = 0;
@@ -272,13 +279,22 @@ export class Simulation {
     this.pulse *= lerp(0.925, 0.955, this.mode.vapor);
     this.blast *= 0.965;
     const blast = this.blast;
-    this.state = this.stateTarget + (1 - this.stateTarget) * Math.min(1, this.pulse * this.depth + blast);
+    // A rippling mode doesn't open all at once on a kick; the ripple carries the kick instead.
+    this.state =
+      this.stateTarget +
+      (1 - this.stateTarget) * Math.min(1, this.pulse * this.depth * (1 - mode.ripple) + blast);
     const e = this.state;
     // In the blast range the shockwave grows much faster than the drive: that's what vaporizes.
     const drive = this.pendingShock * this.depth;
     const shock = drive * lerp(1, 7.5, blast) * (R / 220) * 2.4;
     const shockGlow = Math.min(1, this.pendingShock * 0.35 + drive * 0.5);
     this.pendingShock = 0;
+    if (shock && mode.ripple) {
+      // The ring both pushes particles and lifts their homes outward as it passes (a travelling bulge).
+      this.ripples.push({ r: 0, amp: shock, glow: shockGlow, lift: Math.min(1.5, drive) * R * RIPPLE_LIFT });
+      if (this.ripples.length > MAX_RIPPLES) this.ripples.shift();
+    }
+    const instantShock = shock * (1 - mode.ripple);
 
     // A held formation takes over from the mode: a stiff spring to its target, calm damping, and no
     // thermostat, wall or spin to fight it. `fw` eases in so the swarm accelerates into place.
@@ -300,6 +316,13 @@ export class Simulation {
       (1 - 0.85 * blast);
     const containK = mode.contain * e * (1 - fw) * (1 - blast);
     const re = this.effectiveRadius();
+    // Ripples cross the shape in RIPPLE_SECONDS: quicker when tight, slower when loose.
+    const rippleSpeed = re / (60 * lerp(RIPPLE_SECONDS[0], RIPPLE_SECONDS[1], this.stateTarget));
+    const rippleWidth = re * 0.14;
+    const rippleShare = rippleSpeed / (rippleWidth * Math.sqrt(Math.PI));
+    for (const ring of this.ripples) ring.r += rippleSpeed;
+    this.ripples = this.ripples.filter((ring) => ring.r < re * 1.8);
+    const ripples = this.ripples;
     const containR = re * mode.containRadius;
     // Gas: the openness a kick adds (beyond the slider) makes it wander and slow, not speed up.
     const kickOpen = this.stateTarget < 1 ? Math.max(0, (e - this.stateTarget) / (1 - this.stateTarget)) : 0;
@@ -440,6 +463,22 @@ export class Simulation {
       let hx = cx + dhx + (shx - dhx) * gw + this.scatterX[i] * scatter;
       let hy = cy + dhy + (shy - dhy) * gw + this.scatterY[i] * scatter;
       let hz = shz * gw + this.scatterZ[i] * scatter * gw;
+      if (ripples.length) {
+        const px = x[i] - cx;
+        const py = y[i] - cy;
+        const pz = z[i];
+        const pd = Math.hypot(px, py, pz) || 1;
+        let lift = 0;
+        for (const ring of ripples) {
+          const q = (pd - ring.r) / rippleWidth;
+          if (q * q < 9) lift += ring.lift * Math.exp(-q * q);
+        }
+        if (lift) {
+          hx += (px / pd) * lift;
+          hy += (py / pd) * lift;
+          hz += (pz / pd) * lift;
+        }
+      }
       if (fw > 0) {
         // Formations are flat and face the viewer, like a seal on the wall.
         hx += (cx + summoning.tx[i] * formR - hx) * fw;
@@ -459,10 +498,26 @@ export class Simulation {
       const ox = x[i] - cx;
       const oy = y[i] - cy;
       const oz = z[i];
-      if (shock) {
+      if (ripples.length) {
+        // Each ring pushes outward as it passes; spread over the steps it takes to cross a particle,
+        // the total push matches an instant shockwave's.
         const od = Math.hypot(ox, oy, oz) || 1;
         const rim = 0.3 + 0.7 * Math.min(1, od / re);
-        const f = (shock * rim) / od;
+        for (const ring of ripples) {
+          const q = (od - ring.r) / rippleWidth;
+          if (q * q > 9) continue;
+          const g = Math.exp(-q * q);
+          const f = (ring.amp * rim * g * rippleShare) / od;
+          vx[i] += ox * f;
+          vy[i] += oy * f;
+          vz[i] += oz * f;
+          if (this.excite[i] < ring.glow * rim * g) this.excite[i] = ring.glow * rim * g;
+        }
+      }
+      if (instantShock) {
+        const od = Math.hypot(ox, oy, oz) || 1;
+        const rim = 0.3 + 0.7 * Math.min(1, od / re);
+        const f = (instantShock * rim) / od;
         vx[i] += ox * f;
         vy[i] += oy * f;
         vz[i] += oz * f;
