@@ -39,6 +39,9 @@ const MOON_FORCE_MAX = 2;
 const BEAM_RESIDUAL = 0.25;
 /** Per-step condensing of evaporated particles: back in a few seconds. */
 const VAPOR_DECAY = Math.exp(-1 / 60 / 2);
+/** Chance per step that gas under a fast-moving pointer evaporates, and the pointer speed (px/step) for full effect. */
+const POINTER_VAPOR = 0.15;
+const POINTER_VAPOR_SPEED = 15;
 /** Vapour above this drifts outward; below it, it's pulled home. */
 const VAPOR_HOLD = 0.25;
 /** Pull home while condensing (px/step² at the reference radius, before the closeness boost). */
@@ -379,6 +382,11 @@ export class Simulation {
 
     // Pointer: gravity scales with movement in the fluid modes; poles are always on.
     pointer.step();
+    const sweepVapor =
+      mode.vapor *
+      (1 - fw) *
+      POINTER_VAPOR *
+      Math.min(1, Math.hypot(pointer.vx, pointer.vy) / POINTER_VAPOR_SPEED);
     const gravity = mode.pointerGravity * (mode.alwaysOn ? 1 : 0.25 + 0.75 * pointer.activity) * (R / 220);
     const soft = Math.max(18, R * 0.13);
     const soft2 = soft * soft;
@@ -531,6 +539,10 @@ export class Simulation {
           const w = mode.pointerWake * (1 - d2 / wakeR2);
           ax += pointer.vx * w;
           ay += pointer.vy * w;
+          // Gas: sweeping through it evaporates what the pointer passes; the wake drags it into a trail.
+          if (sweepVapor && Math.random() < sweepVapor * (1 - d2 / wakeR2)) {
+            vapor[i] = Math.max(vapor[i], 0.5 + 0.4 * Math.random());
+          }
         }
       }
       if (moonOn) {
