@@ -116,6 +116,17 @@ const SWIRL_SPREAD = 0.35;
 const SWIRL_GRIP = 0.08;
 /** Seconds to morph between disc and globe. */
 const MORPH_SECONDS = 1.6;
+/**
+ * Deep pumping (Depth past PUMP_FROM, full at DEPTH_MAX): a kick hollows the shape, pushing homes out
+ * by up to PUMP_HOLLOW radii (most for the middle), stiffens the hold PUMP_SPRING×, and lets go at
+ * PUMP_DECAY per step so it snaps back.
+ */
+const PUMP_FROM = 0.65;
+const PUMP_HOLLOW = 0.55;
+const PUMP_SPRING = 2;
+const PUMP_DECAY = 0.86;
+/** Share of the per-hit evaporation a full pump holds back, so most of the gas comes back on the beat. */
+const PUMP_VAPOR_CUT = 0.7;
 /** Strongest pad hit: three times a full kick. */
 export const BLAST_MAX = 3;
 /** Hit × Depth at which the vapor blast is complete: the hardest pad at the default Depth. */
@@ -363,7 +374,10 @@ export class Simulation {
     const { radius: R, cx, cy, width: W, height: H } = this.view;
 
     // Gas holds a kick's opening a little longer, so its churn has time to show.
-    this.pulse *= lerp(0.925, 0.955, this.mode.vapor);
+    // Deep pumps: past the default Depth a kick lets go faster, so the shape snaps back.
+    const deep =
+      Math.min(1, Math.max(0, (this.depth - PUMP_FROM) / (DEPTH_MAX - PUMP_FROM))) * (1 - this.mode.ripple);
+    this.pulse *= lerp(lerp(0.925, 0.955, this.mode.vapor), PUMP_DECAY, deep);
     this.blast *= 0.965;
     // Water doesn't blast: a harder hit is a bigger ripple, and the droplets keep their hold so they return.
     const blast = this.blast * (1 - mode.ripple);
@@ -423,7 +437,11 @@ export class Simulation {
         summoning.strength,
         fw,
       ) *
-      (1 - BLAST_RELEASE * blast);
+      (1 - BLAST_RELEASE * blast * (1 - 0.7 * deep)) *
+      // …and the hold home stiffens, both carrying particles out to the hollowed shape and snapping them back.
+      (1 + PUMP_SPRING * deep * Math.min(1, this.open * 3));
+    // Deep: a kick pushes every home outward by about the same distance, so the middle empties (a ring).
+    const hollow = PUMP_HOLLOW * deep * this.open;
     const containK = mode.contain * e * (1 - fw) * (1 - blast);
     const re = this.effectiveRadius();
     // Ripples cross the shape in RIPPLE_SECONDS: quicker when tight, slower when loose.
@@ -447,7 +465,10 @@ export class Simulation {
     const formR = re * FORMATION_SCALE * (1 + 0.3 * burn);
     const thermal = (lerp(SOLID.thermal, mode.thermal, e) * (1 + 10 * gassy) + burn * 1.5) * scale;
     // Share of particles a kick evaporates: grows with the hit's force, mostly from the edge.
-    const evaporate = mode.vapor * (1 - fw) * Math.min(VAPOR_MAX_SHARE, 0.16 * drive ** 1.6 * this.rest);
+    const evaporate =
+      mode.vapor *
+      (1 - fw) *
+      Math.min(VAPOR_MAX_SHARE * (1 - PUMP_VAPOR_CUT * deep), 0.16 * drive ** 1.6 * this.rest);
     const vapor = this.vapor;
     // Tight gas makes a shorter, quicker round trip than loose: less drift, an earlier turn, a harder pull.
     const looseness = slider;
@@ -630,6 +651,17 @@ export class Simulation {
       let hx = cx + dhx + (shx - dhx) * gw + sdx * scatter;
       let hy = cy + dhy + (shy - dhy) * gw + sdy * scatter;
       let hz = shz * gw + this.scatterZ[i] * scatter * gw;
+      if (hollow) {
+        // Out along the home's own direction from the centre (its disc / sphere point, so even the middle has one).
+        const ux = this.discX[i] + (this.sphereX[i] - this.discX[i]) * gw;
+        const uy = this.discY[i] + (this.sphereY[i] - this.discY[i]) * gw;
+        const uz = this.sphereZ[i] * gw;
+        const ul = Math.hypot(ux, uy, uz) || 1;
+        const push = hollow * re * (1 - 0.5 * Math.min(1, ul));
+        hx += (ux / ul) * push;
+        hy += (uy / ul) * push;
+        hz += (uz / ul) * push;
+      }
       if (ripples.length) {
         const px = x[i] - cx;
         const py = y[i] - cy;
