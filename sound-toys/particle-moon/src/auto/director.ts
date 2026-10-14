@@ -51,8 +51,11 @@ const ENERGY_SHIFT = 0.25;
 const AMBIENT_MIN = 6;
 const AMBIENT_EVERY = 30;
 /** How fast a beat's State swing closes again (s), and how much harder the bar's first beat swings. */
-const SWING_TAU = 0.2;
+const SWING_TAU = 0.3;
 const ACCENT = 1.4;
+/** Chance a groove or drop look spins the globe faster than a bar a turn (½ bar), and of those, a drop's share at a beat a turn. */
+const FAST_SPIN_CHANCE = 0.12;
+const FASTEST_SPIN_SHARE = 0.4;
 /** Kick strength over which Depth goes from its normal range into deep, and how much a groove reaches for it. */
 const STRONG_KICK: readonly [number, number] = [0.85, 1.15];
 const DEEP = 0.2;
@@ -230,7 +233,16 @@ export class Director {
   private pickSpeeds(f: MusicFeatures, globe: boolean): void {
     const kick = f.kickRate >= BEAT_RATE;
     const e = Math.min(1, f.energy / Math.max(0.2, f.baseline * 1.4));
-    const top = globe ? (this.scene === 'drop' && Math.random() < 0.15 ? 8 : 7) : 4;
+    // Disc at most half speed; the globe usually up to a bar a turn, now and then ½ bar in a groove or a
+    // drop, and a beat a turn only rarely, in a drop.
+    const hot = this.scene === 'groove' || this.scene === 'drop';
+    const top = !globe
+      ? 4
+      : hot && Math.random() < FAST_SPIN_CHANCE
+        ? this.scene === 'drop' && Math.random() < FASTEST_SPIN_SHARE
+          ? 8
+          : 7
+        : 6;
     const step = (lo: number, hi: number): number => lo + Math.floor(Math.random() * (hi - lo + 1));
     const suited = spinIndex(this.bpm);
     const explore = !kick || e < 0.4;
@@ -339,7 +351,7 @@ export class Director {
         };
       case 'groove':
         return {
-          state: 0.05 + 0.3 * e + 0.2 * ambience,
+          state: 0.05 + 0.45 * e + 0.25 * ambience,
           depth: 0.45 + 0.2 * Math.min(1, f.kickStrength) + DEEP * strongKick,
           spin: this.spinStep / 8,
           orbit: this.orbitStep / 8,
@@ -349,7 +361,7 @@ export class Director {
           shapes: ['disc', 'globe'],
           moon: 0.6,
           glide: 2,
-          swing: 0.18 * (0.5 + 0.5 * e),
+          swing: 0.35 * (0.5 + 0.5 * e),
         };
       case 'build':
         // Gathering: tightening, deepening and spinning faster the longer it builds.
@@ -363,7 +375,7 @@ export class Director {
           shapes: ['disc', 'globe'],
           moon: 0.7,
           glide: 1.5,
-          swing: 0.15 * through,
+          swing: 0.3 * through,
         };
       case 'drop':
         // Tight, deep and pumping on every kick.
@@ -378,7 +390,7 @@ export class Director {
           shapes: ['disc', 'globe'],
           moon: 0.8,
           glide: 0.3,
-          swing: 0.3,
+          swing: 0.5,
         };
       case 'breakdown':
         return {
