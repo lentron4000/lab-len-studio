@@ -56,6 +56,10 @@ const HUDDLE_PACK = 0.33;
 const BREAK_ENERGY = 1.2;
 /** Pointer speed (px/step) at which fully tight fluid gives way completely (4 when loose). */
 const GIVE_SPEED_TIGHT = 24;
+/** Liquid: full-size body from this pointer speed (px/step); a cushion this many body radii wide pushing LIQUID_PUSH. */
+const LIQUID_FULL_SPEED = 0.6;
+const LIQUID_CUSHION = 1.7;
+const LIQUID_PUSH = 1.2;
 /** Pointer speed (px/step) at which the body reaches full size. */
 const BODY_FULL_SPEED = 12;
 /** Share of the hold home the fluid lets go of where the body passes (near it and in its wake). */
@@ -591,7 +595,9 @@ export class Simulation {
     const body = Math.max(10, R * BODY_RADIUS);
     const body2 = body * body;
     // Its solid core only exists while it moves: still, it pushes nothing; full size at BODY_FULL_SPEED.
-    const core = body * Math.min(1, pSpeed / BODY_FULL_SPEED);
+    // Liquid is solid to it at any speed once it moves (it flows round, never through); gas only at speed.
+    const core = body * Math.min(1, pSpeed / (mode.ripple ? LIQUID_FULL_SPEED : BODY_FULL_SPEED));
+    const cushion = mode.ripple ? core * LIQUID_CUSHION : 0;
     const flowReach = body * 5;
     // Faster pointer, longer wake (shape radii, capped).
     const wakeLength = Math.min(R * 1.6, body * (2 + pSpeed * 0.5));
@@ -852,6 +858,20 @@ export class Simulation {
           const w = FLOW_GRIP * pointerScale * (1 - r / flowReach);
           ax += (k2 * (2 * un * nx - pvx) - vx[i]) * w;
           ay += (k2 * (2 * un * ny - pvy) - vy[i]) * w;
+        }
+        if (cushion && r < cushion) {
+          // Liquid: a soft cushion round the body. Particles are eased out of its way and lose any speed
+          // toward it, so they slide round its sides like water round a stone.
+          const nx = rx / r;
+          const ny = ry / r;
+          const depth = (cushion - r) / (cushion - core * 0.5);
+          ax += nx * depth * LIQUID_PUSH * scale;
+          ay += ny * depth * LIQUID_PUSH * scale;
+          const vn = (vx[i] - pvx) * nx + (vy[i] - pvy) * ny;
+          if (vn < 0) {
+            vx[i] -= vn * nx * Math.min(1, depth);
+            vy[i] -= vn * ny * Math.min(1, depth);
+          }
         }
         if (core > 1 && r < core) {
           // Solid: out to the surface, and no closing speed into it.
