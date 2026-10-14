@@ -126,8 +126,8 @@ const RIPPLE_WIDTH = 0.35;
 const RIPPLE_SETTLE = 0.25;
 /** Pull behind the ring relative to the push in front, balanced so the water doesn't drift outward. */
 const RIPPLE_PULL = 1.3;
-/** At full Deep a ripple pushes and lifts this much more (it reaches about a quarter deeper), mostly near the top. */
-const RIPPLE_DEEP = 0.22;
+/** At full Deep a ripple pushes and lifts this much more (it reaches about 40% deeper), mostly near the top. */
+const RIPPLE_DEEP = 0.33;
 /** A kick's attack: per-frame catch-up of the opening (about four frames to land), and frames its push is spread over. */
 const KICK_ATTACK = 0.45;
 const KICK_STEPS = 4;
