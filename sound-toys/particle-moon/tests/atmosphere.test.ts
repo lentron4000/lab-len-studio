@@ -137,3 +137,20 @@ it('Gas B: full Loose leaves room for the kick; only a full-Deep kick reaches fu
   // ...and a kick at the usual Depth swells it far less than a full-Deep one.
   expect(usual.peak - usual.rest).toBeLessThan((deep.peak - deep.rest) * 0.6);
 });
+
+it('Gas B drifts slowly and floats round the cloud rather than circling on the spot', () => {
+  const sim = gasB(1, 0);
+  travel(sim, 10);
+  const x0 = Float32Array.from(sim.x);
+  const y0 = Float32Array.from(sim.y);
+  let path = 0;
+  for (let k = 0; k < 90; k++) path += travel(sim, 1 / 6);
+  let net = 0;
+  for (let i = 0; i < sim.count; i++) net += Math.hypot(sim.x[i] - x0[i], sim.y[i] - y0[i]);
+  net /= sim.count;
+  // Slow: well under Gas A's ~1 px a step (15 s is 900 steps)...
+  expect(path / 900).toBeLessThan(0.4);
+  // ...but it gets somewhere: tens of pixels, on paths far straighter than a jiggle (Gas A's ~0.04).
+  expect(net).toBeGreaterThan(30);
+  expect(net / path).toBeGreaterThan(0.15);
+});
