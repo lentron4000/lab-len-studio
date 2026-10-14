@@ -133,7 +133,7 @@ const PUMP_VAPOR_CUT = 0.7;
  * short, reaching without touching.
  */
 const BOND_FROM = 0.2;
-const BOND_MAX = 10;
+const BOND_MAX = 5;
 const BOND_PULL = 0.3;
 const BOND_GAP = 0.5;
 /** 0 below a, 1 above b, smooth in between. */
@@ -1089,12 +1089,12 @@ export class Simulation {
     }
     if (!on) return 0;
     if (--this.nextBond <= 0 && this.bonds.length < BOND_MAX) {
-      this.nextBond = Math.round(60 * (0.2 + Math.random() * 0.5));
+      this.nextBond = Math.round(60 * (0.6 + Math.random() * 1.2));
       const seed = (Math.random() * n) | 0;
       if (this.bondOf[seed] < 0) {
         // The seed's nearest free neighbours, within a few spacings.
-        const size = 10 + ((Math.random() * 16) | 0);
-        const reach2 = (re * Math.sqrt(Math.PI / n) * 7) ** 2;
+        const size = 3 + ((Math.random() * 4) | 0);
+        const reach2 = (re * Math.sqrt(Math.PI / n) * 4) ** 2;
         const near: [number, number][] = [];
         for (let j = 0; j < n; j++) {
           if (j === seed || this.bondOf[j] >= 0) continue;
