@@ -87,6 +87,22 @@ export function createGlowSprites(colours: readonly Rgb[], size = 64): HTMLCanva
   });
 }
 
+/** Crisp dots in the same colours, no halo: Party and Ritual at Tight, before the glow comes in. */
+export function createCrispSprites(colours: readonly Rgb[], size = 32): HTMLCanvasElement[] {
+  const half = size / 2;
+  return colours.map(([r, g, b]) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return canvas;
+    ctx.fillStyle = `rgb(${r},${g},${b})`;
+    ctx.beginPath();
+    ctx.arc(half, half, half, 0, Math.PI * 2);
+    ctx.fill();
+    return canvas;
+  });
+}
+
 /**
  * Ritual sprites: tighter than the night glow, with a hot core only on the hot end of the ramp,
  * so resting particles read as solid red points rather than soft glitter.

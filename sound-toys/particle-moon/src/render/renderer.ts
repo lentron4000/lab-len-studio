@@ -7,6 +7,7 @@ import { Embers } from './embers';
 import { Fireflies } from './fireflies';
 import {
   assignColours,
+  createCrispSprites,
   createGlowSprites,
   createHeatSprites,
   css,
@@ -48,6 +49,8 @@ const HUDDLE_BUZZ = 0.45;
 /** At full drift an evaporating particle is drawn this much smaller and fainter. */
 const VAPOR_SHRINK = 0.8;
 const VAPOR_FAINT = 0.85;
+/** Party and Ritual: the State (as gas A's slider reads it) by which the resting glow is fully back. */
+const GLOW_FULL = 0.5;
 /** Chance per frame that a hot ritual particle sheds an ember, and the excitation it takes. */
 const EMBER_RATE = 0.03;
 const EMBER_HEAT = 0.65;
@@ -71,6 +74,8 @@ export class Renderer {
 
   private readonly ctx: CanvasRenderingContext2D;
   private readonly sprites: Record<'night' | 'ritual', HTMLCanvasElement[]>;
+  /** The same colours as crisp dots (no glow): what Party and Ritual show at Tight. */
+  private readonly crisp: Record<'night' | 'ritual', HTMLCanvasElement[]>;
   private readonly strokes: Record<'night' | 'ritual', string[]>;
   private readonly colourOf: Uint8Array;
   /** Ritual: heat-ramp step per particle this frame, and a fixed per-particle tone so rest isn't flat. */
@@ -116,6 +121,7 @@ export class Renderer {
     this.fireflies = new Fireflies(sim.count);
     this.tracers = new Tracers(sim.count);
     this.sprites = { night: createGlowSprites(NEON), ritual: createHeatSprites() };
+    this.crisp = { night: createCrispSprites(NEON), ritual: createCrispSprites(HEAT) };
     this.strokes = { night: NEON.map(css), ritual: SMOKE.map(css) };
     this.colourOf = assignColours(sim.sphereX, sim.sphereY, sim.sphereZ);
     this.heatOf = new Uint8Array(sim.count);
@@ -228,6 +234,10 @@ export class Renderer {
     // Ritual: a packed solid glows much less than an open cloud, or the overlap burns it out.
     const flashGain = ritual ? lerp(0.3, 1, poise) : lerp(0.55, 1, open);
     const swell = ritual ? lerp(0.35, 1.3, poise) : 0;
+    // Party and Ritual: crisp dots at full Tight, the resting glow fading in toward Loose (full by GLOW_FULL).
+    const loosening = Math.min(1, (sim.slider * sim.mode.sizeGain) / GLOW_FULL);
+    const glowing = loosening * loosening * (3 - 2 * loosening);
+    const crispness = 1 - glowing;
     // Ritual dots at rest: smaller and crisper toward solid (red points, not haze).
     const restSize = lerp(1.1, 1.5, poise);
     // Packed dots are drawn faint so their overlap doesn't burn out; lift them more there.
@@ -257,6 +267,7 @@ export class Renderer {
       if (size === 0) continue;
       if (glow) {
         const bandAlpha = NIGHT_BANDS[b % BANDS];
+        const crispSprites = this.crisp[ritual ? 'ritual' : 'night'];
         for (let n = 0; n < size; n++) {
           const i = idx[n];
           const ps = camera / (camera - z[i]);
@@ -271,10 +282,20 @@ export class Renderer {
           const rim = 1 - limb * (1 - Math.min(1, Math.abs(z[i]) / re));
           // Ritual rests brighter: at rest it's all deep red, which needs more weight to read on black.
           const rest = ritual ? Math.min(0.85, base * restLift) : base;
-          ctx.globalAlpha =
-            Math.min(1, (rest * rim + (1 - rest) * f * flashGain) * bandAlpha) * (1 - VAPOR_FAINT * fade[i]);
+          const faint = 1 - VAPOR_FAINT * fade[i];
           const px = qx + (Math.random() - 0.5) * 2 * jitter * (1 + HUDDLE_BUZZ * huddle[i]);
           const py = qy + (Math.random() - 0.5) * 2 * jitter * (1 + HUDDLE_BUZZ * huddle[i]);
+          if (crispness > 0) {
+            // Toward Tight: a crisp, solid dot at the particle's true size, laid over rather than added up.
+            const rc = dot * ps * (1 - VAPOR_SHRINK * fade[i]);
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.globalAlpha = crispness * bandAlpha * faint;
+            ctx.drawImage(crispSprites[colourOf[i]], px - rc, py - rc, rc * 2, rc * 2);
+            ctx.globalCompositeOperation = 'lighter';
+          }
+          // The resting glow comes in toward Loose; a flash or a kick's heat glows at any State.
+          ctx.globalAlpha =
+            Math.min(1, (rest * rim * glowing + (1 - rest) * f * flashGain) * bandAlpha) * faint;
           const sprite = sprites[colourOf[i]];
           let sx = this.velX[i] * streak;
           let sy = this.velY[i] * streak;
