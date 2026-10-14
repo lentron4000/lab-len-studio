@@ -377,7 +377,7 @@ export class Simulation {
 
   /** The State slider as this mode uses it: capped at its loosest (see PhysicsMode.looseCap). */
   get slider(): number {
-    return Math.min(this.stateTarget, this.mode.looseCap);
+    return Math.min(this.stateTarget * this.mode.looseRange, this.mode.looseCap);
   }
 
   /** Drawn dot radius (px, before perspective). Packed: dots overlap into a solid. Open: small points. */

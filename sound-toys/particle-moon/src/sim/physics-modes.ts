@@ -50,6 +50,8 @@ export interface PhysicsMode {
   loosePointer: number;
   /** Loosest the State slider takes it (0–1): the slider's loose end maps to this. */
   looseCap: number;
+  /** State at the slider's loose end, the whole slider scaled to fit (0–1); looseCap then clips it. */
+  looseRange: number;
   /** Kicks travel out from the centre as a ripple instead of moving everything at once (0 or 1). */
   ripple: number;
   description: string;
@@ -81,6 +83,7 @@ export const PHYSICS_MODES: Record<PhysicsModeId, PhysicsMode> = {
     vapor: 1,
     ripple: 0,
     looseCap: 1,
+    looseRange: 0.9,
     loosePointer: 1,
     description:
       'Air. Molecules fly in straight lines and bounce off each other. Sweep the pointer through to push a current; it diffuses back.',
@@ -107,6 +110,7 @@ export const PHYSICS_MODES: Record<PhysicsModeId, PhysicsMode> = {
     vapor: 0,
     ripple: 1,
     looseCap: 0.75,
+    looseRange: 1,
     loosePointer: 0.35,
     description:
       'Liquid. No fixed positions, only cohesion and surface tension. It swirls, pulls into tendrils and pools back together.',
@@ -133,6 +137,7 @@ export const PHYSICS_MODES: Record<PhysicsModeId, PhysicsMode> = {
     vapor: 0,
     ripple: 0,
     looseCap: 1,
+    looseRange: 1,
     loosePointer: 1,
     description: 'The pointer and the moon are opposite poles. Particles are pulled in and pack around them.',
   },
@@ -158,6 +163,7 @@ export const PHYSICS_MODES: Record<PhysicsModeId, PhysicsMode> = {
     vapor: 0,
     ripple: 0,
     looseCap: 1,
+    looseRange: 1,
     loosePointer: 1,
     description:
       'The pointer and the moon are like poles. Particles are pushed aside and close in behind them.',
