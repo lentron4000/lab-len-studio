@@ -338,6 +338,7 @@ class App implements ControlHost {
   private listen(dt: number): void {
     const now = nowSeconds();
     this.listener.tick(dt, now);
+    for (const snare of this.listener.takeSnares()) this.sim.nudgeSpin(snare);
     const f = this.listener.features;
     // Vibration: mostly the highs (shimmer, and a flick on every hat), a little general loudness under
     // them. Silence is still. The demo kick isn't analysed; treat it as a steady, moderate sound.

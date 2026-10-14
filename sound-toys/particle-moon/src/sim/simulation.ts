@@ -129,6 +129,24 @@ const SWIRL_GRIP = 0.08;
  */
 const DISC_TIGHT_DOT = 0.81;
 const GLOBE_TIGHT_DOT = 0.46;
+/**
+ * Snare nudge: angular kick per hit (rad/step), how fast that push dies (per step) and how fast the
+ * offset springs back. A full snare turns the shape about 4° forward and back within half a second.
+ */
+const NUDGE_KICK = 0.025;
+const NUDGE_DRAG = 0.75;
+const NUDGE_RETURN = 0.92;
+
+/** a × b for row-major 3×3 matrices. */
+function multiply(a: Mat3, b: Mat3): Mat3 {
+  const m = new Array<number>(9);
+  for (let r = 0; r < 3; r++) {
+    for (let c = 0; c < 3; c++)
+      m[r * 3 + c] = a[r * 3] * b[c] + a[r * 3 + 1] * b[3 + c] + a[r * 3 + 2] * b[6 + c];
+  }
+  return m as Mat3;
+}
+
 /** Seconds to morph between disc and globe. */
 const MORPH_SECONDS = 1.6;
 /**
@@ -214,6 +232,11 @@ export class Simulation {
   /** 0 = disc, 1 = globe; the shape morphs toward it. */
   shapeTarget = 0;
 
+  /** A snare: nudges the spin forward a touch (strength 0–1+); it springs back on its own. */
+  nudgeSpin(strength: number): void {
+    this.nudgeVel += NUDGE_KICK * Math.min(1.5, strength);
+  }
+
   /** Effective state: the slider pushed toward cloud by the current pulse. */
   state = 0.5;
   /** Current disc → globe blend. */
@@ -253,6 +276,9 @@ export class Simulation {
   /** Rest before the last hit, relative to a 100 bpm beat (0.5–3): longer rests, more vapour. */
   private rest = 1;
   private spinAngle = 0;
+  /** Snare nudge: extra spin angle (radians) and its rate; it springs back to zero. */
+  private nudge = 0;
+  private nudgeVel = 0;
   private view: Viewport = { width: 1, height: 1, radius: 100, cx: 0, cy: 0 };
 
   constructor(count: number) {
@@ -520,11 +546,26 @@ export class Simulation {
     const targetSpin = angularStep(this.spinBars, this.bpm);
     this.spinSpeed += (targetSpin - this.spinSpeed) * 0.04;
     this.spinAngle += this.spinSpeed;
-    const M = rotation(GLOBE_AXIS, this.spinAngle);
-    const dM: Mat3 | null =
+    // Snare nudge: a quick push forward round the spin axis that springs back to where it was.
+    const lastNudge = this.nudge;
+    this.nudge += this.nudgeVel;
+    this.nudgeVel *= NUDGE_DRAG;
+    this.nudge *= NUDGE_RETURN;
+    const dNudge = (this.nudge - lastNudge) * (1 - fw);
+    const M = rotation(GLOBE_AXIS, this.spinAngle + this.nudge);
+    let dM: Mat3 | null =
       gw > 0 && Math.abs(this.spinSpeed) > 1e-6 && fw < 1
         ? rotation(GLOBE_AXIS, this.spinSpeed * gw * (1 - fw))
         : null;
+    if (Math.abs(dNudge) > 1e-6) {
+      // Round the screen normal for the disc, the tilted axis for the globe, blending through the morph.
+      const nx = GLOBE_AXIS[0] * gw;
+      const ny = GLOBE_AXIS[1] * gw;
+      const nz = GLOBE_AXIS[2] * gw + (1 - gw);
+      const nl = Math.hypot(nx, ny, nz) || 1;
+      const n = rotation([nx / nl, ny / nl, nz / nl], dNudge);
+      dM = dM ? multiply(n, dM) : n;
+    }
     const swirl = this.spinSpeed * (1 - fw);
     const swirlGrip = SWIRL_GRIP * (1 - gw);
     const camera = R * CAMERA_DISTANCE;
@@ -670,8 +711,8 @@ export class Simulation {
         if (this.discTurn[i] > Math.PI) this.discTurn[i] -= 2 * Math.PI;
         else if (this.discTurn[i] < -Math.PI) this.discTurn[i] += 2 * Math.PI;
       }
-      const turnCos = Math.cos(this.discTurn[i]);
-      const turnSin = Math.sin(this.discTurn[i]);
+      const turnCos = Math.cos(this.discTurn[i] + this.nudge);
+      const turnSin = Math.sin(this.discTurn[i] + this.nudge);
       const dhx = (this.discX[i] * turnCos - this.discY[i] * turnSin) * re;
       const dhy = (this.discX[i] * turnSin + this.discY[i] * turnCos) * re;
       const sx = this.sphereX[i];

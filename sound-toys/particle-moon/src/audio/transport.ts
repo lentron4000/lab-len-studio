@@ -24,6 +24,8 @@ export interface TempoReadout {
   overridden: boolean;
 }
 
+/** Seconds without analysis frames after which the music has stopped (file paused, input gone). */
+const NO_FRAMES = 0.5;
 /** Beats are released this far ahead so the frame that shows them is painted on the beat. */
 const PAINT_LEAD = 0.008;
 
@@ -43,6 +45,8 @@ export class Transport {
   private kicks: [heardAt: number, strength: number][] = [];
   private lastPoll = nowSeconds();
   private clockBeats = 0;
+  /** Wall-clock time of the last analysis frame: without any (paused, stopped) there's no music. */
+  private lastFrameAt = -Infinity;
 
   constructor(fps = ANALYSIS_RATE) {
     this.fps = fps;
@@ -60,6 +64,12 @@ export class Transport {
     this.lastPoll = nowSeconds();
     this.offset = 0;
     this.offsetSet = false;
+    this.lastFrameAt = -Infinity;
+  }
+
+  /** No music: no frames lately (paused, stopped) or the tracker hears silence. */
+  private quiet(now: number): boolean {
+    return now - this.lastFrameAt > NO_FRAMES || this.tracker.state(now - this.offset) === 'silent';
   }
 
   /**
@@ -69,6 +79,7 @@ export class Transport {
   pushFrames(frames: readonly OnsetFrame[], heardAt: number): void {
     const last = frames.at(-1);
     if (!last) return;
+    this.lastFrameAt = nowSeconds();
     const o = heardAt - last.t;
     if (!this.offsetSet || Math.abs(o - this.offset) > 0.25) {
       this.offset = o;
@@ -121,7 +132,9 @@ export class Transport {
     while (this.kicks.length > 0 && this.kicks[0][0] <= now) kicks.push(this.kicks.shift()![1]);
     let beats = this.clockBeats;
     this.clockBeats = 0;
-    if (!this.clock.isActive()) {
+    // The beat clock keeps time through breakdowns, but not through silence or a paused file.
+    const ownClock = this.tracker.locked; // tap or the demo kick: a set tempo
+    if (!this.clock.isActive() && (ownClock || !this.quiet(now))) {
       beats += this.tracker.beats(this.lastPoll - this.offset, now + PAINT_LEAD - this.offset).length;
     }
     this.lastPoll = now + PAINT_LEAD;
@@ -142,8 +155,12 @@ export class Transport {
     if (t.locked) return { bpm: t.displayBpm(), label: 'Tap · locked', overridden };
     if (mode !== 'file' && mode !== 'live') return { bpm: 0, label: 'No source', overridden };
 
+    const now = nowSeconds();
+    if (now - this.lastFrameAt > NO_FRAMES) {
+      return { bpm: 0, label: mode === 'file' ? 'Paused' : 'No signal', overridden };
+    }
     const bpm = t.displayBpm();
-    switch (t.state(nowSeconds() - this.offset)) {
+    switch (t.state(now - this.offset)) {
       case 'tracking': {
         const o = t.octave;
         return {
@@ -155,9 +172,10 @@ export class Transport {
       case 'holding':
         return { bpm, label: 'Holding (no beat heard)', overridden };
       case 'silent':
-        return { bpm, label: bpm ? 'Holding (silence)' : 'No signal', overridden };
+        return { bpm: 0, label: 'Silence', overridden };
       default:
-        return { bpm, label: 'Listening…', overridden };
+        // No tempo until beats have actually been matched (noise can suggest one).
+        return { bpm: 0, label: 'Listening…', overridden };
     }
   }
 }

@@ -44,6 +44,20 @@ const TREND_LEN = 12;
 const HI_PEAK_DECAY = 0.9986;
 const HAT_ONSET = 0.35;
 const HAT_DECAY = Math.exp(-FRAME / 0.12);
+/**
+ * Snare: mid-band onset (log rise) needed, or SNARE_OVER × its recent mean if that's higher (so busy
+ * music doesn't fire constantly); the kick band, from just before to just after, must stay under
+ * SNARE_MAX_KICK_LEVEL of its recent peak (a kick fills it); at most one per SNARE_GAP s.
+ */
+const SNARE_ONSET = 2;
+const SNARE_OVER = 4;
+const SNARE_MAX_KICK_LEVEL = 0.5;
+/** A snare's high-band energy must be at least this share of its mid-band energy. */
+const SNARE_BRIGHT = 0.5;
+const SNARE_GAP = 0.12;
+/** Frames a snare waits for a kick before it counts (60 ms). */
+const SNARE_CONFIRM = 6;
+const MID_MEAN_RATE = 0.005;
 /** With no analysis frames for this long (paused, stopped), the music is silent. */
 const SILENT_AFTER = 0.25;
 
@@ -67,6 +81,16 @@ export class MusicListener {
     hatRate: 0,
   };
   private hiPeak = 1e-9;
+  /** Snares heard since the last take: a sharp mid-band hit with no kick under it. */
+  private snares: number[] = [];
+  private midMean = 0;
+  private lastSnare = -Infinity;
+  /** A possible snare waits a few frames: if a kick lands with it, it was the kick's attack. */
+  private pendingSnare = 0;
+  private pendingSnareAt = 0;
+  private pendingLo = 0;
+  /** Kick-band level over the last two frames (a kick's low end can arrive a frame early). */
+  private recentLo = [0, 0];
   private hatFlick = 0;
   private hats: number[] = [];
   private kicks: { t: number; strength: number }[] = [];
@@ -84,9 +108,33 @@ export class MusicListener {
       // Highs carry little energy even in bright music, so weight them up before taking the share.
       const bright = Math.min(1, (frame.hiEnergy * 12) / (total + frame.hiEnergy * 11));
       if (loud > 0.05) f.brightness = ease(f.brightness, bright, FRAME, BRIGHT_TAU);
-      // Highs: steady shimmer from their level, a flick on each hat.
+      // Snare (or clap): a mid-band jump well above the recent norm, with nothing much in the kick band.
+      this.midMean += (frame.mid - this.midMean) * MID_MEAN_RATE;
+      const snareAt = Math.max(SNARE_ONSET, this.midMean * SNARE_OVER);
+      if (this.pendingSnare) {
+        this.pendingLo = Math.max(this.pendingLo, frame.loLevel);
+        if (++this.pendingSnareAt >= SNARE_CONFIRM) {
+          // During a kick the kick band is at its peak; a snare barely touches it.
+          if (this.pendingLo < SNARE_MAX_KICK_LEVEL) this.snares.push(this.pendingSnare);
+          this.pendingSnare = 0;
+        }
+      } else if (
+        frame.mid > snareAt &&
+        // Snares and claps are noisy and bright; a bass note jumping in the mids isn't.
+        frame.hiEnergy > SNARE_BRIGHT * frame.midEnergy &&
+        loud > 0.05 &&
+        now - this.lastSnare > SNARE_GAP
+      ) {
+        this.lastSnare = now;
+        this.pendingSnare = Math.min(1.5, frame.mid / snareAt);
+        this.pendingSnareAt = 0;
+        this.pendingLo = Math.max(frame.loLevel, ...this.recentLo);
+      }
+      this.recentLo[1] = this.recentLo[0];
+      this.recentLo[0] = frame.loLevel;
+      // Highs: a steady shimmer from how much of the sound is up there, and a flick on each hat.
       this.hiPeak = Math.max(frame.hiEnergy, this.hiPeak * HI_PEAK_DECAY);
-      const hiLevel = loud > 0.02 ? Math.sqrt(frame.hiEnergy / this.hiPeak) : 0;
+      const hiLevel = loud > 0.02 ? Math.sqrt(frame.hiEnergy / this.hiPeak) * bright : 0;
       this.hatFlick *= HAT_DECAY;
       if (frame.hi > HAT_ONSET && loud > 0.05) {
         this.hatFlick = Math.min(1, Math.max(this.hatFlick, frame.hi / (HAT_ONSET * 3)));
@@ -95,6 +143,13 @@ export class MusicListener {
       f.shimmer = ease(f.shimmer, Math.max(0.55 * hiLevel, this.hatFlick), FRAME, 0.05);
     }
     this.lastFrameAt = now;
+  }
+
+  /** Snares since the last call (strengths, ~1 for a clear hit). */
+  takeSnares(): number[] {
+    const s = this.snares;
+    this.snares = [];
+    return s;
   }
 
   /** A detected kick (or beat), strength 0–1+. */
