@@ -36,6 +36,22 @@ const HAND_BACK = 30;
 /** Slider updates per second (they glide in between). */
 const APPLY_RATE = 15;
 
+/** Seconds per turn the spin aims for when a kick drives it. */
+const SPIN_SECONDS = 5;
+/** Bars per turn for each Spin slider step (see sim/divisions). */
+const SPIN_BARS = [0, 32, 16, 8, 4, 2, 1, 0.5, 0.25];
+
+/** Spin slider step nearest one turn per SPIN_SECONDS at this tempo (2 bars with no tempo). */
+function spinIndex(bpm: number): number {
+  if (!bpm) return 5;
+  const bars = (SPIN_SECONDS * bpm) / 240;
+  let best = 1;
+  for (let i = 1; i < SPIN_BARS.length; i++) {
+    if (Math.abs(Math.log(SPIN_BARS[i] / bars)) < Math.abs(Math.log(SPIN_BARS[best] / bars))) best = i;
+  }
+  return best;
+}
+
 /** Physical controls the director moves. Sliders take a 0–1 value; options an id. */
 export interface DirectorControls {
   setSlider(id: SliderId, value01: number): void;
@@ -66,6 +82,7 @@ export class Director {
   private readonly chosen: Record<OptionGroup, string> = { mode: '', shape: '', moon: '' };
   private readonly touched = new Map<string, number>();
   private now = 0;
+  private bpm = 0;
 
   constructor(private readonly controls: DirectorControls) {}
 
@@ -81,7 +98,9 @@ export class Director {
     this.touched.set(control, this.now);
   }
 
-  update(f: MusicFeatures, dt: number, now: number): void {
+  /** @param bpm the transport's tempo (0 when there's none) */
+  update(f: MusicFeatures, dt: number, now: number, bpm = 0): void {
+    this.bpm = bpm;
     this.now = now;
     if (!this.enabled) return;
     this.readScene(f, dt, now);
@@ -130,15 +149,22 @@ export class Director {
   /** The look for the current scene, shaded by the music's energy and brightness. */
   private look(f: MusicFeatures): Look {
     const e = Math.min(1, f.energy / Math.max(0.2, f.baseline * 1.4));
+    // How ambient it is: no kick, few hats, quieter than usual. Ambient passages open up looser.
+    const ambience =
+      0.5 * (1 - Math.min(1, f.kickRate / 1.5)) + 0.25 * (1 - Math.min(1, f.hatRate / 4)) + 0.25 * (1 - e);
+    // Spin to the tempo: with the kick driving, about one turn every SPIN_SECONDS; without it, slower
+    // divisions of that same speed so it stays in time.
+    const kickSpin = spinIndex(this.bpm);
+    const spin = (slower: number): number => Math.max(1, kickSpin - slower) / 8;
     const bright = f.brightness;
     const through = Math.min(1, this.sceneFor / 16); // how far into the scene (builds ramp with it)
     switch (this.scene) {
       case 'drift':
         // Ambient: loose and floating, opening as it swells; brighter tones bring the moon closer.
         return {
-          state: 0.45 + 0.3 * e,
+          state: 0.35 + 0.5 * ambience,
           depth: 0.25,
-          spin: e > 0.5 ? 2 / 8 : 1 / 8,
+          spin: spin(3),
           mforce: 0.3 + 0.4 * bright,
           mode: 'water',
           shape: 'globe',
@@ -147,9 +173,9 @@ export class Director {
         };
       case 'groove':
         return {
-          state: 0.15 + 0.35 * e,
+          state: 0.05 + 0.3 * e + 0.2 * ambience,
           depth: 0.45 + 0.2 * Math.min(1, f.kickStrength),
-          spin: 4 / 8,
+          spin: spin(0),
           mforce: 0.5,
           mode: bright > 0.55 ? 'gas' : 'water',
           shape: 'disc',
@@ -161,7 +187,7 @@ export class Director {
         return {
           state: 0.35 * (1 - through) + 0.05,
           depth: 0.5 + 0.3 * through,
-          spin: (3 + 3 * through) / 8,
+          spin: spin(through < 0.5 ? 2 : through < 0.9 ? 1 : 0),
           mforce: 0.6 + 0.3 * through,
           mode: 'attract',
           shape: 'disc',
@@ -173,7 +199,7 @@ export class Director {
         return {
           state: 0,
           depth: 0.95,
-          spin: 4 / 8,
+          spin: spin(0),
           mforce: 0.5,
           mode: 'gas',
           shape: 'disc',
@@ -182,9 +208,9 @@ export class Director {
         };
       case 'breakdown':
         return {
-          state: 0.6 + 0.15 * (1 - e),
+          state: 0.45 + 0.45 * ambience,
           depth: 0.25,
-          spin: 1 / 8,
+          spin: spin(2),
           mforce: 0.4,
           mode: 'water',
           shape: 'disc',

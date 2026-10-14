@@ -114,15 +114,18 @@ describe('TempoTracker on other grooves', () => {
     expect(beatError(r, t.beatSeconds)).toBeLessThan(10);
   });
 
-  it('follows a tempo change from 124 to 128 within 8 s and settles on the exact value', () => {
+  it('holds a settled tempo, then follows a sustained change from 124 to 128 and settles exactly', () => {
     const a = renderTrack({ bpm: 124, seconds: 20, kicks: [0, 1, 2, 3], bass: true });
-    const b = renderTrack({ bpm: 128, seconds: 20, kicks: [0, 1, 2, 3], bass: true });
+    const b = renderTrack({ bpm: 128, seconds: 30, kicks: [0, 1, 2, 3], bass: true });
     const samples = new Float32Array(a.samples.length + b.samples.length);
     samples.set(a.samples);
     samples.set(b.samples, a.samples.length);
     const r = run({ samples, kickTimes: [], beatSeconds: 60 / 128 });
     expect(r.timeline[18]).toBe(124);
-    expect(r.timeline[27]).toBeCloseTo(128, 0);
+    // Electronic tracks rarely change tempo, so a settled tempo resists for a while…
+    expect(r.timeline[23]).toBe(124);
+    // …but a sustained change still wins.
+    expect(r.timeline[45]).toBeCloseTo(128, 0);
     expect(r.tracker.displayBpm()).toBe(128);
   });
 });

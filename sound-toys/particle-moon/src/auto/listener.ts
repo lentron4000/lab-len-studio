@@ -18,6 +18,13 @@ export interface MusicFeatures {
   kickStrength: number;
   /** Energy trend over the last six seconds: falling (−1) to rising (1). */
   rise: number;
+  /**
+   * The highs, as they shimmer: high-band level against its own recent peak, with a flick on every
+   * hat. This is what makes the particles vibrate.
+   */
+  shimmer: number;
+  /** High-band hits (hats, shakers) per second. */
+  hatRate: number;
 }
 
 const FRAME = 0.01; // seconds per analysis frame
@@ -33,6 +40,10 @@ const KICK_WINDOW = 4;
 /** Energy history for the trend: one sample every 0.5 s, six seconds' worth. */
 const TREND_STEP = 0.5;
 const TREND_LEN = 12;
+/** High-band peak tracking (~5 s half-life), a hat's onset threshold (log rise), and its flick decay per frame. */
+const HI_PEAK_DECAY = 0.9986;
+const HAT_ONSET = 0.35;
+const HAT_DECAY = Math.exp(-FRAME / 0.12);
 /** With no analysis frames for this long (paused, stopped), the music is silent. */
 const SILENT_AFTER = 0.25;
 
@@ -52,7 +63,12 @@ export class MusicListener {
     kickRate: 0,
     kickStrength: 0,
     rise: 0,
+    shimmer: 0,
+    hatRate: 0,
   };
+  private hiPeak = 1e-9;
+  private hatFlick = 0;
+  private hats: number[] = [];
   private kicks: { t: number; strength: number }[] = [];
   private trend: number[] = [];
   private sinceTrend = 0;
@@ -68,6 +84,15 @@ export class MusicListener {
       // Highs carry little energy even in bright music, so weight them up before taking the share.
       const bright = Math.min(1, (frame.hiEnergy * 12) / (total + frame.hiEnergy * 11));
       if (loud > 0.05) f.brightness = ease(f.brightness, bright, FRAME, BRIGHT_TAU);
+      // Highs: steady shimmer from their level, a flick on each hat.
+      this.hiPeak = Math.max(frame.hiEnergy, this.hiPeak * HI_PEAK_DECAY);
+      const hiLevel = loud > 0.02 ? Math.sqrt(frame.hiEnergy / this.hiPeak) : 0;
+      this.hatFlick *= HAT_DECAY;
+      if (frame.hi > HAT_ONSET && loud > 0.05) {
+        this.hatFlick = Math.min(1, Math.max(this.hatFlick, frame.hi / (HAT_ONSET * 3)));
+        this.hats.push(now);
+      }
+      f.shimmer = ease(f.shimmer, Math.max(0.55 * hiLevel, this.hatFlick), FRAME, 0.05);
     }
     this.lastFrameAt = now;
   }
@@ -80,7 +105,12 @@ export class MusicListener {
   /** Once per animation frame: silence decay, kick rate and the energy trend. */
   tick(dt: number, now: number): void {
     const f = this.features;
-    if (now - this.lastFrameAt > SILENT_AFTER) this.follow(0, dt);
+    if (now - this.lastFrameAt > SILENT_AFTER) {
+      this.follow(0, dt);
+      f.shimmer = ease(f.shimmer, 0, dt, 0.1);
+    }
+    this.hats = this.hats.filter((t) => now - t < KICK_WINDOW);
+    f.hatRate = this.hats.length / KICK_WINDOW;
     this.kicks = this.kicks.filter((k) => now - k.t < KICK_WINDOW);
     f.kickRate = this.kicks.length / KICK_WINDOW;
     const strength = this.kicks.reduce((s, k) => s + Math.min(1.5, k.strength), 0) / (this.kicks.length || 1);

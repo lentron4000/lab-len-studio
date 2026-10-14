@@ -339,10 +339,17 @@ class App implements ControlHost {
     const now = nowSeconds();
     this.listener.tick(dt, now);
     const f = this.listener.features;
-    // The demo kick isn't analysed; treat it as a steady, moderate sound.
-    const target = this.audio.mode === 'demo' ? 0.7 : this.audio.mode === 'off' ? 0 : f.loud;
-    this.sim.sound += (target - this.sim.sound) * (1 - Math.exp(-dt / (target > this.sim.sound ? 0.1 : 0.6)));
-    this.director.update(f, dt, now);
+    // Vibration: mostly the highs (shimmer, and a flick on every hat), a little general loudness under
+    // them. Silence is still. The demo kick isn't analysed; treat it as a steady, moderate sound.
+    const target =
+      this.audio.mode === 'demo'
+        ? 0.7
+        : this.audio.mode === 'off'
+          ? 0
+          : Math.min(1, 0.75 * f.shimmer + 0.25 * f.loud);
+    this.sim.sound +=
+      (target - this.sim.sound) * (1 - Math.exp(-dt / (target > this.sim.sound ? 0.03 : 0.25)));
+    this.director.update(f, dt, now, this.transport.readout(this.audio.mode).bpm);
   }
 
   private toggleAuto(): void {

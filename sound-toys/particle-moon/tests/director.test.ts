@@ -22,10 +22,10 @@ function setup(): {
 }
 
 /** Plays `seconds` of music with these features, 60 frames a second. Returns the scenes seen. */
-function play(director: Director, f: MusicFeatures, seconds: number, from: number): Scene[] {
+function play(director: Director, f: MusicFeatures, seconds: number, from: number, bpm = 0): Scene[] {
   const seen: Scene[] = [];
   for (let s = 0; s < seconds * 60; s++) {
-    director.update(f, 1 / 60, from + s / 60);
+    director.update(f, 1 / 60, from + s / 60, bpm);
     if (seen.at(-1) !== director.scene) seen.push(director.scene);
   }
   return seen;
@@ -39,8 +39,17 @@ const ambient: MusicFeatures = {
   kickRate: 0,
   kickStrength: 0,
   rise: 0,
+  shimmer: 0,
+  hatRate: 0,
 };
-const groove: MusicFeatures = { ...ambient, energy: 0.6, baseline: 0.55, kickRate: 1.6, kickStrength: 0.9 };
+const groove: MusicFeatures = {
+  ...ambient,
+  energy: 0.6,
+  baseline: 0.55,
+  kickRate: 1.6,
+  kickStrength: 0.9,
+  hatRate: 4,
+};
 const breakdown: MusicFeatures = { ...ambient, energy: 0.35, baseline: 0.5, kickRate: 0, rise: -0.2 };
 const build: MusicFeatures = { ...breakdown, energy: 0.5, rise: 0.5, brightness: 0.7 };
 const drop: MusicFeatures = { ...groove, energy: 0.8, baseline: 0.5, kickStrength: 1.2 };
@@ -83,5 +92,14 @@ describe('AI mode', () => {
     expect(sliders.has('state')).toBe(false);
     play(director, groove, 20, 25); // handed back after 30 s
     expect(sliders.has('state')).toBe(true);
+  });
+
+  it('spins to the tempo with the kick, and at a slower division of it without', () => {
+    const { director, sliders } = setup();
+    play(director, groove, 20, 0, 124);
+    // 124 bpm: about five seconds a turn is 2 bars (Spin step 5 of 8).
+    expect(sliders.get('spin')).toBeCloseTo(5 / 8, 1);
+    play(director, breakdown, 15, 20, 124);
+    expect(sliders.get('spin')).toBeLessThan(4 / 8);
   });
 });

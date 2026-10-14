@@ -13,6 +13,9 @@ const HISTORY_FRAMES = 1200; // 12 s ring buffer
 const ESTIMATE_EVERY = 50; // re-estimate tempo every 0.5 s
 const ESTIMATE_WINDOW = 1000; // autocorrelate the last 10 s
 const MIN_FRAMES = 400; // need 4 s before the first estimate
+/** Agreeing estimates (0.5 s apart) after which the tempo counts as the track's, and votes then needed to change it. */
+const SETTLED = 24;
+const CHANGE_VOTES = 16;
 const BPM_MIN = 60;
 const BPM_MAX = 190;
 const BPM_STEP = 0.25;
@@ -66,6 +69,8 @@ export class TempoTracker {
   private fineBpm = 0;
   private pendingBpm = 0;
   private pendingCount = 0;
+  /** Consecutive estimates agreeing with the current tempo; past SETTLED it's taken as the track's tempo. */
+  private agreeing = 0;
   private _confidence = 0;
   private _strength = 0;
   private _combSource: CombSource = 'onset';
@@ -383,6 +388,7 @@ export class TempoTracker {
     } else {
       const rel = bpm / this.bpmEstimate;
       if (Math.abs(rel - 1) < 0.03) {
+        this.agreeing++;
         this.bpmEstimate += 0.3 * ((this.fineBpm || bpm) - this.bpmEstimate);
         if (!this.fineBpm) this.period += 0.2 * (60 / this.bpmEstimate - this.period);
         this.pendingBpm = 0;
@@ -395,10 +401,15 @@ export class TempoTracker {
     this.checkPhase();
   }
 
-  /** Adopts `bpm` once two consecutive estimates agree within 3%. */
+  /**
+   * Adopts `bpm` once consecutive estimates agree within 3%: two for the first lock, but once a tempo has
+   * held for SETTLED estimates it's taken as the track's (electronic music rarely changes tempo), and only
+   * CHANGE_VOTES in a row (~8 s) move it. A new file or source starts over.
+   */
   private vote(bpm: number): void {
+    const needed = this.agreeing >= SETTLED ? CHANGE_VOTES : 2;
     if (this.pendingBpm && Math.abs(bpm / this.pendingBpm - 1) < 0.03) {
-      if (++this.pendingCount >= 2) this.setBpm(bpm);
+      if (++this.pendingCount >= needed) this.setBpm(bpm);
     } else {
       this.pendingBpm = bpm;
       this.pendingCount = 1;
@@ -406,6 +417,7 @@ export class TempoTracker {
   }
 
   private setBpm(bpm: number): void {
+    this.agreeing = 0;
     this.bpmEstimate = bpm;
     this.period = 60 / bpm;
     this.pendingBpm = 0;
