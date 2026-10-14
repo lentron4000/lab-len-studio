@@ -57,6 +57,13 @@ export interface PhysicsMode {
    */
   kickReach: number;
   kickOpen: number;
+  /**
+   * Dot size and scatter follow the state × this (capped at 1), so a mode whose slider tops out lower
+   * (to sit smaller) still looks as loose as gas A at the same slider position: small dots, well scattered.
+   */
+  sizeGain: number;
+  /** Share of a kick's opening that shrinks the dots (gas B opens 1/0.3 as far as gas A, so 0.3 keeps them alike). */
+  kickShrink: number;
   /** Kicks travel out from the centre as a ripple instead of moving everything at once (0 or 1). */
   ripple: number;
   /**
@@ -96,6 +103,8 @@ export const PHYSICS_MODES: Record<PhysicsModeId, PhysicsMode> = {
     looseRange: 0.9,
     kickReach: 1,
     kickOpen: 0.3,
+    sizeGain: 1,
+    kickShrink: 1,
     loosePointer: 1,
     description:
       'Air. Molecules fly in straight lines and bounce off each other. Sweep the pointer through to push a current; it diffuses back.',
@@ -125,6 +134,8 @@ export const PHYSICS_MODES: Record<PhysicsModeId, PhysicsMode> = {
     looseRange: 0.55,
     kickReach: 0.4,
     kickOpen: 1,
+    sizeGain: 0.9 / 0.55, // its slider tops out at 0.55; gas A's at 0.9
+    kickShrink: 0.3,
     loosePointer: 1,
     description:
       'Gas B: an atmosphere. Banded rings drift in opposite directions and slow currents swirl through them. Music or the pointer stirs it, a kick shatters the bands into eddies, and Tight resists.',
@@ -154,6 +165,8 @@ export const PHYSICS_MODES: Record<PhysicsModeId, PhysicsMode> = {
     looseRange: 1,
     kickReach: 1,
     kickOpen: 0.3,
+    sizeGain: 1,
+    kickShrink: 1,
     loosePointer: 0.35,
     description:
       'Liquid. No fixed positions, only cohesion and surface tension. It swirls, pulls into tendrils and pools back together.',

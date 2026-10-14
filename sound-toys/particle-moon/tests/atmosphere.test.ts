@@ -73,15 +73,22 @@ it('Gas B: after the music stops, a Tight disc packs back into a solid circle', 
   expect(open).toBeLessThan(10);
 });
 
-it('Gas B: sound gathers loose smoke into rings, slowly; Tight resists', () => {
-  const loose = gasB(0.9, 0.6);
-  const start = ringContrast(loose);
-  travel(loose, 3);
-  const early = ringContrast(loose);
-  travel(loose, 20);
-  // Gas A's cloud measures ~0.1 here; the rings take many seconds to form.
-  expect(ringContrast(loose)).toBeGreaterThan(Math.max(0.25, early));
-  expect(early).toBeLessThan(start + 0.15);
+it('Gas B: with music, loose smoke gathers into rings now and then (more than Gas A); Tight resists', () => {
+  /** Ring contrast averaged over 15 s (rings form in patches and come and go). */
+  const meanContrast = (sim: Simulation): number => {
+    travel(sim, 8);
+    let sum = 0;
+    for (let k = 0; k < 15; k++) {
+      travel(sim, 1);
+      sum += ringContrast(sim);
+    }
+    return sum / 15;
+  };
+  const b = gasB(0.9, 0.6);
+  const a = gasB(0.9, 0.6);
+  a.mode = PHYSICS_MODES.gas;
+  // Subtle, but there.
+  expect(meanContrast(b)).toBeGreaterThan(meanContrast(a) + 0.02);
   // Tight shows no more rings than Gas A's (its own edge ring already reads as some contrast).
   const tight = gasB(0.1, 0.6);
   const tightA = gasB(0.1, 0.6);

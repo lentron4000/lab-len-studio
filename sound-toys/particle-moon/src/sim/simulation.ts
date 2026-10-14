@@ -132,15 +132,29 @@ const ATMO_SOUND_PACE = 2;
  * way (fully stirred, fully Loose), eased in and out over ATMO_BAND_EASE s, so they form slowly and,
  * when the stirring stops, the homes slide back and the cloud settles the way Gas A does.
  */
-const ATMO_BAND_DEPTH = 0.8;
+const ATMO_BAND_DEPTH = 0.55;
 const ATMO_BAND_EASE = 6;
-/** The swirl: waves of a stream function (it stirs without squeezing), their wavelength in shape radii, speed and drift. */
-const ATMO_SWIRL_WAVES = 3;
-const ATMO_SWIRL_LENGTH = 0.8;
+/**
+ * Where rings form: a slowly wandering field (it moves ATMO_PATCH_PACE× as fast as the rings themselves)
+ * starts allowing them above ATMO_PATCH_FROM and fully above ATMO_PATCH_FULL (of −1–1), so about a
+ * quarter of the cloud carries ring arcs at any time, each forming and fading in its own place.
+ */
+const ATMO_PATCH_PACE = 4;
+const ATMO_PATCH_FROM = 0.2;
+const ATMO_PATCH_FULL = 0.75;
+/**
+ * The swirl: a few soft eddies (each turning the air round its own centre, half one way and half the
+ * other, fastest ATMO_SWIRL_SPEED at ATMO_SWIRL_SIZE radii out and fading beyond) that wander slowly
+ * through the cloud, ATMO_SWIRL_DRIFT as fast as the rings evolve. Local eddies, as real gas swirls,
+ * rather than waves across the whole cloud (those lined the particles up in stripes).
+ */
+const ATMO_SWIRLS = 4;
+const ATMO_SWIRL_SIZE = 0.35;
 const ATMO_SWIRL_SPEED = 0.6;
 const ATMO_SWIRL_DRIFT = 0.0015;
-/** A kick's turbulence: smaller, faster eddies that take over from the rings, settling over ATMO_SETTLE_BEATS. */
-const ATMO_EDDY_LENGTH = 0.45;
+/** A kick's turbulence: more, smaller and quicker eddies that take over from the rings, settling over ATMO_SETTLE_BEATS. */
+const ATMO_EDDIES = 7;
+const ATMO_EDDY_SIZE = 0.16;
 const ATMO_EDDY_SPEED = 2.6;
 const ATMO_EDDY_DRIFT = 0.03;
 const ATMO_KICK = 0.9;
@@ -352,10 +366,16 @@ export class Simulation {
   private atmoTime = 0;
   /** How far the homes have gathered into the rings (0–ATMO_BAND_DEPTH), eased. */
   private bandDepth = 0;
-  private readonly swirlWaves = Array.from({ length: ATMO_SWIRL_WAVES * 2 }, (_, k) => ({
-    angle: Math.random() * Math.PI * 2,
-    phase: Math.random() * Math.PI * 2,
-    rate: (k % 2 ? -1 : 1) * (0.6 + 0.8 * Math.random()),
+  /** Atmosphere: the eddies' wandering paths (Lissajous, in shape radii) and turning sense; swirls first, then a kick's eddies. */
+  private readonly vortices = Array.from({ length: ATMO_SWIRLS + ATMO_EDDIES }, (_, k) => ({
+    eddy: k >= ATMO_SWIRLS,
+    spin: k % 2 ? -1 : 1,
+    fx: 0.6 + 0.8 * Math.random(),
+    fy: 0.6 + 0.8 * Math.random(),
+    px: Math.random() * Math.PI * 2,
+    py: Math.random() * Math.PI * 2,
+    x: 0,
+    y: 0,
   }));
   private driftX = 0;
   private driftY = 0;
@@ -455,7 +475,12 @@ export class Simulation {
     return lerp(
       spacing * lerp(DISC_TIGHT_DOT, GLOBE_TIGHT_DOT, this.globe),
       Math.max(1.15, R / 170),
-      Math.pow(this.state, 0.7),
+      // How loose the dots look: the slider's looseness, plus a kick's opening only as far as gas A's
+      // kicks open it (gas B's open much further, which would shrink its dots on every beat).
+      Math.pow(
+        Math.min(1, (this.slider + (this.state - this.slider) * this.mode.kickShrink) * this.mode.sizeGain),
+        0.7,
+      ),
     );
   }
 
@@ -644,13 +669,12 @@ export class Simulation {
     // (Not during a blast: that should still fling it.)
     const gassy = Math.min(1, mode.vapor * kickOpen * (1 - fw) * (1 - blast) * this.rest);
     // (Gas B is still until something stirs it: its molecules only fly when the atmosphere does.)
+    // How loose it looks and moves: gas B sits smaller than its slider says, but its molecules fly, drag
+    // and scatter like gas A's at the same slider (cooler, they'd settle into a lattice and show stripes).
+    const looseLook = Math.min(1, e * mode.sizeGain);
     const targetSpeed =
-      mode.speed *
-      lerp(e, slider, mode.vapor) *
-      scale *
-      (1 - fw) *
-      lerp(1, this.atmoActivity(this.stateTarget), mode.atmosphere);
-    const damping = lerp(lerp(SOLID.damping, mode.damping, e), 0.9, fw) * (1 - 0.1 * gassy);
+      mode.speed * lerp(e, Math.min(1, slider * mode.sizeGain), mode.vapor) * scale * (1 - fw);
+    const damping = lerp(lerp(SOLID.damping, mode.damping, looseLook), 0.9, fw) * (1 - 0.1 * gassy);
     const formR = re * FORMATION_SCALE * (1 + 0.3 * burn);
     const thermal =
       (lerp(SOLID.thermal, mode.thermal, e) * (1 + 10 * gassy) * this.sound + burn * 1.5) * scale;
@@ -667,7 +691,7 @@ export class Simulation {
     // Tight vapour loses its energy quickly and heads home; loose lingers.
     const vaporDecay = Math.exp(-1 / 60 / lerp(VAPOR_LIFE_TIGHT, VAPOR_LIFE, looseness));
     const vaporHold = lerp(0.42, VAPOR_HOLD, looseness);
-    const scatter = R * 0.2 * e;
+    const scatter = R * 0.2 * looseLook;
 
     // Shape morph and spin.
     // Timed S-curve: starts gently, glides, settles, rather than lurching off at full speed.
@@ -780,13 +804,21 @@ export class Simulation {
       this.atmoTime += 1 + ATMO_SOUND_PACE * this.sound + 2 * this.turbulence;
       const calm = 1 / (1 + 2 * this.turbulence);
       gather = ATMO_GATHER * scale * calm;
-      swirlAmp = (ATMO_SWIRL_SPEED * scale) / ATMO_SWIRL_WAVES;
-      eddyAmp = (ATMO_EDDY_SPEED * scale * Math.min(1, this.turbulence)) / ATMO_SWIRL_WAVES;
+      swirlAmp = ATMO_SWIRL_SPEED * scale;
+      eddyAmp = ATMO_EDDY_SPEED * scale * Math.min(1, this.turbulence);
     }
-    const swirlK = (2 * Math.PI) / (re * ATMO_SWIRL_LENGTH);
-    const eddyK = (2 * Math.PI) / (re * ATMO_EDDY_LENGTH);
-    const waves = this.swirlWaves;
     const atmoT = this.atmoTime;
+    const vortices = this.vortices;
+    if (atmoLevel) {
+      // Where each eddy has wandered to (it stays within ~0.6 of the radius of the centre).
+      for (const v of vortices) {
+        const t = atmoT * (v.eddy ? ATMO_EDDY_DRIFT : ATMO_SWIRL_DRIFT);
+        v.x = 0.6 * re * Math.sin(v.fx * t + v.px);
+        v.y = 0.6 * re * Math.sin(v.fy * t + v.py);
+      }
+    }
+    const swirlSize = re * ATMO_SWIRL_SIZE;
+    const eddySize = re * ATMO_EDDY_SIZE;
     // The rings' slow wander: their phase, and the phases of the waves that bend them.
     const bandPhase = (2 * Math.PI * atmoT) / (60 * ATMO_BAND_PERIOD);
     this.bandDepth +=
@@ -794,7 +826,17 @@ export class Simulation {
     const bandDepth = this.bandDepth > 1e-4 ? this.bandDepth : 0;
     const twoPiN = 2 * Math.PI * ATMO_BANDS;
     // How far a home at `lane` moves toward its ring's crest (in lanes), and the rings' slow bend round the circle.
-    const toCrest = (lane: number): number => (-Math.sin(twoPiN * lane - bandPhase) / twoPiN) * bandDepth;
+    // Rings only form in patches: where a slowly wandering field rises past a threshold, so arcs come
+    // and go in different places rather than whole rings standing round the cloud.
+    const ringPatch = (angle: number, lane: number): number => {
+      const f =
+        0.5 * Math.sin(2 * angle + 4.4 * lane + bandPhase * ATMO_PATCH_PACE) +
+        0.5 * Math.sin(3 * angle - 8.2 * lane - bandPhase * ATMO_PATCH_PACE * 1.4 + 2);
+      const t = Math.min(1, Math.max(0, (f - ATMO_PATCH_FROM) / (ATMO_PATCH_FULL - ATMO_PATCH_FROM)));
+      return t * t * (3 - 2 * t);
+    };
+    const toCrest = (lane: number, angle: number): number =>
+      (-Math.sin(twoPiN * lane - bandPhase) / twoPiN) * bandDepth * ringPatch(angle, lane);
     const ringBend = (angle: number): number =>
       ATMO_BAND_WARP * Math.sin(2 * angle + bandPhase * 1.3) +
       ATMO_BAND_WARP * 0.6 * Math.sin(3 * angle - bandPhase * 0.7 + 1);
@@ -907,7 +949,10 @@ export class Simulation {
         const lat = ka * sx + kb * sy + kc * sz;
         const nlat = Math.max(
           -0.999,
-          Math.min(0.999, lat + 2 * toCrest((lat + 1) / 2 + ringBend(Math.atan2(sy, sx)))),
+          Math.min(
+            0.999,
+            lat + 2 * toCrest((lat + 1) / 2 + ringBend(Math.atan2(sy, sx)), Math.atan2(sy, sx)),
+          ),
         );
         const ring = Math.sqrt(Math.max(1e-6, 1 - lat * lat));
         const f = Math.sqrt(1 - nlat * nlat) / ring;
@@ -932,7 +977,7 @@ export class Simulation {
         const ry = hy - cy;
         const rh = Math.hypot(rx, ry) / re;
         if (rh > 1e-3) {
-          const grow = 1 + (toCrest(rh + ringBend(Math.atan2(ry, rx))) / rh) * (1 - gw);
+          const grow = 1 + (toCrest(rh + ringBend(Math.atan2(ry, rx)), Math.atan2(ry, rx)) / rh) * (1 - gw);
           hx = cx + rx * grow;
           hy = cy + ry * grow;
         }
@@ -1112,7 +1157,8 @@ export class Simulation {
         const lat = (ox * GLOBE_AXIS[0] + oy * GLOBE_AXIS[1] + oz * GLOBE_AXIS[2]) / o3;
         const angle = Math.atan2(oy, ox);
         const lane = lerp(od / re, (lat + 1) / 2, gw) + ringBend(angle);
-        const across = -gather * Math.sin(2 * Math.PI * ATMO_BANDS * lane - bandPhase);
+        const across =
+          -gather * Math.sin(2 * Math.PI * ATMO_BANDS * lane - bandPhase) * ringPatch(angle, lane);
         // Across the rings: outward (disc), or toward the north along the meridian (globe).
         let nx = ox / od;
         let ny = oy / od;
@@ -1129,25 +1175,18 @@ export class Simulation {
         let fx = nx * across;
         let fy = ny * across;
         const fz = nz * across;
-        for (let w = 0; w < waves.length; w++) {
-          const wave = waves[w];
-          const eddy = w >= ATMO_SWIRL_WAVES;
-          const k = eddy ? eddyK : swirlK;
-          const amp = eddy ? eddyAmp : swirlAmp;
+        for (const vortex of vortices) {
+          const amp = vortex.eddy ? eddyAmp : swirlAmp;
           if (!amp) continue;
-          const kx = Math.cos(wave.angle) * k;
-          const ky = Math.sin(wave.angle) * k;
-          const c =
-            amp *
-            Math.cos(
-              kx * ox +
-                ky * oy +
-                wave.phase +
-                wave.rate * atmoT * (eddy ? ATMO_EDDY_DRIFT : ATMO_SWIRL_DRIFT),
-            );
-          // Velocity from a stream function: (∂ψ/∂y, −∂ψ/∂x), normalised so amp is the speed.
-          fx += (c * ky) / k;
-          fy -= (c * kx) / k;
+          const size = vortex.eddy ? eddySize : swirlSize;
+          const dx = ox - vortex.x;
+          const dy = oy - vortex.y;
+          const q = (dx * dx + dy * dy) / (size * size);
+          if (q > 9) continue;
+          // Round its centre: still at the middle, fastest (amp) one size out, fading beyond.
+          const w = (vortex.spin * amp * Math.exp(0.5 * (1 - q))) / size;
+          fx -= dy * w;
+          fy += dx * w;
         }
         ax += (fx - vx[i]) * ATMO_GRIP * atmoLevel;
         ay += (fy - vy[i]) * ATMO_GRIP * atmoLevel;
