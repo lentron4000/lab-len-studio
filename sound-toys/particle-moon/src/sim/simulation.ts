@@ -97,6 +97,13 @@ const REST_MAX = 3;
 /** Depth velocity kept per step while the shape is flat. */
 const FLAT_Z_DAMPING = 0.93;
 const SILENT_Z_DAMPING = 0.8;
+/**
+ * Keeps the shape as a whole on its centre: a spring and damper (per step) on the centroid of the
+ * particles still in the shape. Local dents and stirs are untouched, but a loose cloud no longer slides
+ * bodily after the moon's bow wave (it sloshed ±17% of the radius each orbit). Off for held formations.
+ */
+const CENTRE_SPRING = 0.006;
+const CENTRE_DAMPING = 0.12;
 /** Water: seconds for a kick's ripple to cross the shape, at Tight and at Loose; and rings alive at once. */
 const RIPPLE_SECONDS: readonly [number, number] = [0.45, 0.8];
 const MAX_RIPPLES = 6;
@@ -267,6 +274,11 @@ export class Simulation {
   private pendingShock = 0;
   /** How open the kick has the shape right now; it rises over a few frames (attack) rather than at once. */
   private open = 0;
+  /** Centroid of the particles in the shape, from the last step: offset from centre (px) and velocity. */
+  private driftX = 0;
+  private driftY = 0;
+  private driftVx = 0;
+  private driftVy = 0;
   /** The current kick's push, spread over KICK_STEPS frames so it lands with body rather than as a snap. */
   private kickLeft = 0;
   private kickStrength = 0;
@@ -677,6 +689,14 @@ export class Simulation {
     if (e > 0.02) this.interact(re, e, scale, gw, W, H);
 
     let ke = 0;
+    const centring = 1 - fw;
+    const centreAx = -(CENTRE_SPRING * this.driftX + CENTRE_DAMPING * this.driftVx) * centring;
+    const centreAy = -(CENTRE_SPRING * this.driftY + CENTRE_DAMPING * this.driftVy) * centring;
+    let sumX = 0;
+    let sumY = 0;
+    let sumVx = 0;
+    let sumVy = 0;
+    let inShape = 0;
     const zPin = 0.08 * (1 - gw);
     // A flat shape (the disc, or a held formation) bleeds off depth motion. Without this, the moon's
     // nudges in z ring on a frictionless pin: particles bob toward the camera, swelling and glowing.
@@ -1100,6 +1120,10 @@ export class Simulation {
         ax -= -sy * along * swirlGrip * e;
         ay -= sx * along * swirlGrip * e;
       }
+      if (!v) {
+        ax += centreAx;
+        ay += centreAy;
+      }
       const drag = damping * (1 - 0.06 * v * (1 - blast));
       let nvx = (vx[i] + ax) * drag;
       let nvy = (vy[i] + ay) * drag;
@@ -1130,9 +1154,22 @@ export class Simulation {
         }
       }
       ke += sp2;
+      if (!v) {
+        sumX += x[i];
+        sumY += y[i];
+        sumVx += nvx;
+        sumVy += nvy;
+        inShape++;
+      }
       const stir = Math.min(1, (Math.hypot(nvx - tvx, nvy - tvy, nvz) - calm) * exciteGain);
       excite[i] = stir > excite[i] ? excite[i] + (stir - excite[i]) * 0.5 : excite[i] * EXCITE_DECAY;
       if (excite[i] < burn * 0.85) excite[i] = burn * 0.85;
+    }
+    if (inShape) {
+      this.driftX = sumX / inShape - cx;
+      this.driftY = sumY / inShape - cy;
+      this.driftVx = sumVx / inShape;
+      this.driftVy = sumVy / inShape;
     }
     return ke / N;
   }

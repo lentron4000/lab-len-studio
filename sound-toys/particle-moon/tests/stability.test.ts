@@ -34,3 +34,22 @@ it('with no sound the tight disc is perfectly still', () => {
     stirred = Math.max(stirred, Math.hypot(sim.x[j] - x0[j], sim.y[j] - y0[j]));
   expect(stirred).toBeGreaterThan(0.05);
 });
+
+it('a loose gas cloud stays centred while the moon orbits it', () => {
+  const sim = new Simulation(1500);
+  sim.mode = PHYSICS_MODES.gas;
+  sim.setViewport({ width: 1440, height: 900, radius: 300, cx: 720, cy: 450 }, true);
+  sim.stateTarget = sim.state = 0.9;
+  sim.sound = 0.5;
+  sim.moon.enabled = true;
+  let worst = 0;
+  for (let s = 0; s < 60 * 60; s++) {
+    sim.step();
+    if (s < 300) continue;
+    let mx = 0;
+    for (let i = 0; i < sim.count; i++) mx += sim.x[i];
+    worst = Math.max(worst, Math.abs(mx / sim.count - 720));
+  }
+  // Before the centring spring, the moon's bow wave carried the whole cloud ±20% of the radius.
+  expect(worst / 300).toBeLessThan(0.07);
+});
