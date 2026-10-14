@@ -21,16 +21,16 @@ function gathered(mode: PhysicsModeId, radius = 40, pole: -1 | 0 | 1 = 0): [befo
   return [before, near()];
 }
 
-it('a still pointer: gas ignores it, liquid keeps clear of it, an attract pole gathers', () => {
-  const [gasBefore, gasAfter] = gathered('gas');
-  // Gas neither pulls in nor pushes away for a still pointer.
-  expect(gasAfter).toBeLessThanOrEqual(gasBefore + 4);
-  expect(gasAfter).toBeGreaterThanOrEqual(gasBefore - 4);
+it('a still pointer: gas ignores it (even as a pole), liquid keeps clear of it, an attract pole gathers liquid', () => {
+  // Gas is left to drift on its own: the pointer neither pulls in nor pushes away, pole or not.
+  for (const pole of [0, 1] as const) {
+    const [gasBefore, gasAfter] = gathered('gas', 40, pole);
+    expect(gasAfter).toBeLessThanOrEqual(gasBefore + 4);
+    expect(gasAfter).toBeGreaterThanOrEqual(gasBefore - 4);
+  }
   // Liquid treats it as a solid object: dots keep 2 px clear of the cursor circle (7.5 px).
   const [, liquidAfter] = gathered('water', 9);
   expect(liquidAfter).toBe(0);
-  for (const mode of ['gas', 'water'] as const) {
-    const [before, after] = gathered(mode, 40, 1);
-    expect(after, mode).toBeGreaterThan(before * 2);
-  }
+  const [before, after] = gathered('water', 40, 1);
+  expect(after).toBeGreaterThan(before * 2);
 });

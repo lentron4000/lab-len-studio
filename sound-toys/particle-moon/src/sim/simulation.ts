@@ -113,12 +113,12 @@ const SILENT_Z_DAMPING = 0.8;
  * percent). Off for held formations and the globe.
  */
 /**
- * Atmosphere (Gas B): smoke that drifts and, now and then, settles into rings round the centre. Nothing
+ * Atmosphere (gas): smoke that drifts and, now and then, settles into rings round the centre. Nothing
  * turns the cloud. Each home drifts slowly with the air round it, along a few wandering eddies (fastest
  * ATMO_SWIRL_SPEED) and across toward a ring's crest where one is forming (ATMO_GATHER), and the
  * particle floats after it on its spring: everything moves at the same gentle pace and can travel round
  * the cloud. Homes ease back to where they started over ATMO_HOLD s while stirred, ATMO_SETTLE s once
- * calm (so a quiet cloud settles the way Gas A does). The rings warp and wander over ATMO_BAND_PERIOD s.
+ * calm (so a quiet cloud settles back on its springs). The rings warp and wander over ATMO_BAND_PERIOD s.
  * It's stirred by sound, the pointer moving over the cloud (fading over ATMO_STIR_FADE s), a kick, and
  * on its own toward Loose (ATMO_AMBIENT). Sound quickens the evolution (by up to ATMO_SOUND_PACE×).
  * Tight resists (ATMO_TIGHT of it). Speeds are px/step at the reference radius.
@@ -159,7 +159,7 @@ const ATMO_SETTLE_BEATS = 2;
 const ATMO_GRIP = 0.035;
 /** Smoke drifts on its own toward Loose: stir rising from none at Tight to this much at the loosest. */
 const ATMO_AMBIENT = 0.45;
-/** Gas B's molecules idle at this share of gas A's speed when nothing stirs them (ambient drift stays slow). */
+/** Gas's molecules idle at this share of their full speed when nothing stirs them (ambient drift stays slow). */
 const ATMO_CALM_SPEED = 0.12;
 /** …and at most this share when stirred (it stays floaty with music; a kick's eddies add the churn). */
 const ATMO_STIRRED_SPEED = 0.3;
@@ -242,8 +242,15 @@ const GAS_BREATH_CURVE = 3;
 const GAS_BLAST_PUSH = 1;
 /** Gas's shockwave strength against the other modes' (it swells; it isn't thrown). */
 const GAS_SHOCK = 0.4;
-/** How much of the home pull a blast lets go in gas, against the other modes. (How far a kick opens it: PhysicsMode.kickOpen.) */
+/** How much of the home pull a blast lets go in gas, against the other modes. */
 const GAS_RELEASE = 0.25;
+/**
+ * How far a kick opens gas toward the cloud end: the hit (× Depth, plus any blast) is scaled by this
+ * before capping at fully open, so the opening grows with Depth and only a full-Deep kick opens it fully.
+ */
+const GAS_KICK_REACH = 0.4;
+/** Share of a kick's opening that shrinks gas's dots (it opens far, which would shrink them on every beat). */
+const GAS_KICK_SHRINK = 0.3;
 /** Strongest pad hit: three times a full kick. */
 export const BLAST_MAX = 3;
 /** Hit × Depth at which the vapor blast is complete: the hardest pad at the default Depth. */
@@ -479,10 +486,13 @@ export class Simulation {
     return lerp(
       spacing * lerp(DISC_TIGHT_DOT, GLOBE_TIGHT_DOT, this.globe),
       Math.max(1.15, R / 170),
-      // How loose the dots look: the slider's looseness, plus a kick's opening only as far as gas A's
-      // kicks open it (gas B's open much further, which would shrink its dots on every beat).
+      // How loose the dots look: the slider's looseness plus a share of a kick's opening (GAS_KICK_SHRINK).
       Math.pow(
-        Math.min(1, (this.slider + (this.state - this.slider) * this.mode.kickShrink) * this.mode.sizeGain),
+        Math.min(
+          1,
+          (this.slider + (this.state - this.slider) * lerp(1, GAS_KICK_SHRINK, this.mode.vapor)) *
+            this.mode.sizeGain,
+        ),
         0.7,
       ),
     );
@@ -589,11 +599,10 @@ export class Simulation {
     const blast = this.blast * (1 - mode.ripple);
     // A rippling mode doesn't open all at once on a kick; the ripple carries the kick instead.
     // The kick opens the shape over a few frames (attack), then lets go at the usual rate.
-    const openTarget =
-      Math.min(
-        1,
-        (this.pulse * this.depth * (1 - mode.ripple) + blast) * lerp(1, mode.kickReach, mode.vapor),
-      ) * lerp(1, mode.kickOpen, mode.vapor);
+    const openTarget = Math.min(
+      1,
+      (this.pulse * this.depth * (1 - mode.ripple) + blast) * lerp(1, GAS_KICK_REACH, mode.vapor),
+    );
     this.open += (openTarget - this.open) * (openTarget > this.open ? KICK_ATTACK : 1);
     this.state = slider + (1 - slider) * this.open;
     const e = this.state;
@@ -672,11 +681,10 @@ export class Simulation {
     const kickOpen = slider < 1 ? Math.max(0, (e - slider) / (1 - slider)) : 0;
     // (Not during a blast: that should still fling it.)
     const gassy = Math.min(1, mode.vapor * kickOpen * (1 - fw) * (1 - blast) * this.rest);
-    // (Gas B is still until something stirs it: its molecules only fly when the atmosphere does.)
-    // How loose it looks and moves: gas B sits smaller than its slider says, but its molecules fly, drag
-    // and scatter like gas A's at the same slider (cooler, they'd settle into a lattice and show stripes).
+    // How loose it looks and moves (see PhysicsMode.sizeGain): gas sits smaller than its slider says, but
+    // scatters and drags like a fully loose cloud.
     const looseLook = Math.min(1, e * mode.sizeGain);
-    // (Gas B's molecules idle at ATMO_CALM_SPEED of that, up to ATMO_STIRRED_SPEED when stirred.)
+    // Gas's molecules idle at ATMO_CALM_SPEED of their speed, up to ATMO_STIRRED_SPEED when stirred.
     const stirred = Math.min(1, this.sound + this.stir + this.turbulence);
     const targetSpeed =
       mode.speed *
@@ -794,7 +802,7 @@ export class Simulation {
     // Pointer: gravity scales with movement in the fluid modes; poles are always on.
     pointer.step();
     const pointerOn = pointer.active && mode.pointer;
-    // Atmosphere (Gas B): how much is stirring it, and how chaotic a kick has left it.
+    // Atmosphere (gas): how much is stirring it, and how chaotic a kick has left it.
     const atmo = mode.atmosphere * (1 - fw);
     let atmoLevel = 0;
     let gatherDrift = 0;
@@ -1189,7 +1197,7 @@ export class Simulation {
         ay += (fy - vy[i]) * ATMO_GRIP * atmoLevel;
         az += (fz - vz[i]) * ATMO_GRIP * atmoLevel;
       }
-      // (Gas B's thermostat also runs at a target of zero: unstirred, its molecules slow to a stop. Not
+      // (Gas's thermostat also runs at a target of zero: unstirred, its molecules slow to a stop. Not
       // vapour, though, which would stall on its way home.)
       if (targetSpeed || (mode.atmosphere && !v)) {
         // Thermostat: nudge each particle's speed toward the target so gas keeps flying straight.

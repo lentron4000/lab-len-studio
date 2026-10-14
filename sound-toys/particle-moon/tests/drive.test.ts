@@ -56,8 +56,9 @@ describe('drive', () => {
   it('gas breathes at full Depth: a modest swell around a core that stays, not a ring', () => {
     const { rest, peak, core } = hit(1, DEPTH_MAX);
     expect(peak - rest).toBeGreaterThan(0.05);
-    // Before, it flew out to a ring (mean spread ~1.5 radii) with the middle emptied.
-    expect(peak).toBeLessThan(1);
+    // Before, it flew out to a ring (mean spread ~1.5 radii) with the middle emptied. (Full Deep is
+    // the one kick that swells it to full size, so it can just pass one radius.)
+    expect(peak).toBeLessThan(1.1);
     expect(core).toBeGreaterThan(0.6);
   });
 

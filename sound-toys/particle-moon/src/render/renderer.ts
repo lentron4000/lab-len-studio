@@ -49,7 +49,7 @@ const HUDDLE_BUZZ = 0.45;
 /** At full drift an evaporating particle is drawn this much smaller and fainter. */
 const VAPOR_SHRINK = 0.8;
 const VAPOR_FAINT = 0.85;
-/** Party and Ritual: the State (as gas A's slider reads it) by which the resting glow is fully back. */
+/** Party and Ritual: the State (scaled by the mode's sizeGain) by which the resting glow is fully back. */
 const GLOW_FULL = 0.5;
 /** Chance per frame that a hot ritual particle sheds an ember, and the excitation it takes. */
 const EMBER_RATE = 0.03;

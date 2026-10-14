@@ -38,16 +38,16 @@ Modes are defined in [`src/lab-mode.ts`](src/lab-mode.ts).
 
 ## Using it
 
-| Control     | What it does                                                                   |
-| ----------- | ------------------------------------------------------------------------------ |
-| State       | Tight ↔ loose. Kicks push it looser by the Depth amount.                       |
-| Shape       | Disc or globe. The disc spins flat; the globe on a 23.4° axis, leaned to you.  |
-| Spin, Orbit | One revolution / orbit per 32 bars … 1 beat, locked to the current tempo.      |
-| Physics     | Gas, liquid, or the pointer and moon as opposite / like magnetic poles.        |
-| Source      | Off, demo kick (100 BPM), audio file, or live input.                           |
-| Tempo       | Detected tempo and its source. Tap, ½, ×2; Auto clears overrides.              |
-| Pulse       | Pulse on detected kicks, or on the beat grid (predicted, so it lands on time). |
-| Mode        | Day, night or ritual. Shown only in `?m=len`; other modes are locked.          |
+| Control     | What it does                                                                    |
+| ----------- | ------------------------------------------------------------------------------- |
+| State       | Tight ↔ loose. Kicks push it looser by the Depth amount.                        |
+| Shape       | Disc or globe. The disc spins flat; the globe on a 23.4° axis, leaned to you.   |
+| Spin, Orbit | One revolution / orbit per 32 bars … 1 beat, locked to the current tempo.       |
+| Physics     | Gas or liquid; Attract / Repel make the pointer and moon magnetic poles on top. |
+| Source      | Off, demo kick (100 BPM), audio file, or live input.                            |
+| Tempo       | Detected tempo and its source. Tap, ½, ×2; Auto clears overrides.               |
+| Pulse       | Pulse on detected kicks, or on the beat grid (predicted, so it lands on time).  |
+| Mode        | Day, night or ritual. Shown only in `?m=len`; other modes are locked.           |
 
 Keyboard: **H** hide controls, **N** cycle day / night / ritual (len mode), **T** tap tempo, **F** fullscreen, **B** blackout.
 
@@ -84,7 +84,7 @@ the ringed version.
 
 Controls are mapped from data in [`src/midi/profiles.ts`](src/midi/profiles.ts). The Akai MPK mini
 profile assumes knobs 1–5 on CC 70–74 (State, Spin, Orbit, Force, Depth) and pads 1–8 on notes 36–43
-(the four physics modes, a velocity-sensitive kick, and Shape / Moon / Demo toggles). If a unit's preset
+(Gas, Liquid, Attract, Repel, a velocity-sensitive kick, and Shape / Moon / Demo toggles). If a unit's preset
 differs, Map fixes it. **Map** reassigns any
 control: click it, then move a knob or hit a pad. Maps are saved per browser.
 
@@ -161,6 +161,9 @@ Real recordings will be harder than synthetic ones; MIDI clock is the exact opti
 - Particles have a home position on a phyllotaxis disc and a Fibonacci sphere; the shape morphs between
   them. Opening toward cloud weakens the home springs, scatters the homes and hands over to each mode's
   forces: a thermostat for gas, cohesion and viscosity for liquid, gaussian-reach poles for the magnets.
+- Gas has an atmosphere: its homes drift slowly with a few wandering eddies and now and then gather into
+  ring arcs, stirred by sound and kicks (it ignores the pointer). Its slider tops out small, so only a
+  full-Deep kick swells it to full size.
 - Pair interactions use a uniform grid on x/y with true 3D distances, scanning half the neighbourhood.
 - The moon's effect on fluids is potential flow around a moving sphere plus a bow-wave pressure term.
 - Physics runs in fixed 1/60 s steps (up to three per frame) and constants are scaled to the shape's

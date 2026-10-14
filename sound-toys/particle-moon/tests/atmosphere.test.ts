@@ -6,9 +6,9 @@ const R = 280;
 const CX = 720;
 const CY = 450;
 
-function gasB(state: number, sound: number): Simulation {
+function gas(state: number, sound: number): Simulation {
   const sim = new Simulation(1500);
-  sim.mode = PHYSICS_MODES.gasB;
+  sim.mode = PHYSICS_MODES.gas;
   sim.moon.enabled = false;
   sim.stateTarget = sim.state = state;
   sim.sound = sound;
@@ -40,18 +40,18 @@ function travel(sim: Simulation, seconds: number): number {
   return d / sim.count;
 }
 
-it('Gas B with no sound: still at Tight, drifting like smoke toward Loose', () => {
-  const tight = gasB(0, 0);
+it('Gas with no sound: still at Tight, drifting like smoke toward Loose', () => {
+  const tight = gas(0, 0);
   travel(tight, 6);
   expect(travel(tight, 3)).toBeLessThan(0.05);
-  const loose = gasB(0.9, 0);
+  const loose = gas(0.9, 0);
   travel(loose, 6);
   // A slow, steady drift: well over a pixel every few seconds.
   expect(travel(loose, 3)).toBeGreaterThan(1.5);
 });
 
-it('Gas B: after the music stops, a Tight disc packs back into a solid circle', () => {
-  const sim = gasB(0, 0);
+it('Gas: after the music stops, a Tight disc packs back into a solid circle', () => {
+  const sim = gas(0, 0);
   sim.setViewport({ width: 1440, height: 900, radius: 200, cx: CX, cy: CY }, true);
   sim.sound = 0.7;
   for (let s = 0; s < 10 * 60; s++) {
@@ -73,33 +73,34 @@ it('Gas B: after the music stops, a Tight disc packs back into a solid circle', 
   expect(open).toBeLessThan(10);
 });
 
-it('Gas B: with music, loose smoke gathers into rings now and then (more than Gas A); Tight resists', () => {
-  /** Ring contrast averaged over 15 s (rings form in patches and come and go). */
+it('Gas: with music, loose smoke gathers into rings now and then; Tight resists', () => {
+  /** Ring contrast averaged over 30 s (rings form in patches and come and go). */
   const meanContrast = (sim: Simulation): number => {
     travel(sim, 8);
     let sum = 0;
-    for (let k = 0; k < 15; k++) {
+    for (let k = 0; k < 30; k++) {
       travel(sim, 1);
       sum += ringContrast(sim);
     }
-    return sum / 15;
+    return sum / 30;
   };
-  const b = gasB(0.9, 0.6);
-  const a = gasB(0.9, 0.6);
-  a.mode = PHYSICS_MODES.gas;
+  // Against the same gas without its atmosphere (it adds ~0.05 on average at full Loose).
+  const b = gas(1, 0.6);
+  const a = gas(1, 0.6);
+  a.mode = { ...PHYSICS_MODES.gas, atmosphere: 0 };
   // Subtle, but there.
-  expect(meanContrast(b)).toBeGreaterThan(meanContrast(a) + 0.02);
-  // Tight shows no more rings than Gas A's (its own edge ring already reads as some contrast).
-  const tight = gasB(0.1, 0.6);
-  const tightA = gasB(0.1, 0.6);
-  tightA.mode = PHYSICS_MODES.gas;
+  expect(meanContrast(b)).toBeGreaterThan(meanContrast(a) + 0.025);
+  // Tight shows no more rings than without the atmosphere (its own edge ring already reads as some contrast).
+  const tight = gas(0.1, 0.6);
+  const tightA = gas(0.1, 0.6);
+  tightA.mode = { ...PHYSICS_MODES.gas, atmosphere: 0 };
   travel(tight, 20);
   travel(tightA, 20);
   expect(ringContrast(tight)).toBeLessThan(ringContrast(tightA) + 0.05);
 });
 
-it('Gas B: a kick churns it, then it calms', () => {
-  const sim = gasB(0.9, 0.6);
+it('Gas: a kick churns it, then it calms', () => {
+  const sim = gas(0.9, 0.6);
   travel(sim, 6);
   const calm = travel(sim, 0.5);
   sim.fire(1);
@@ -109,9 +110,9 @@ it('Gas B: a kick churns it, then it calms', () => {
   expect(travel(sim, 0.5)).toBeLessThan(churned);
 });
 
-it('Gas B: full Loose leaves room for the kick; only a full-Deep kick reaches full size', () => {
+it('Gas: full Loose leaves room for the kick; only a full-Deep kick reaches full size', () => {
   const peak = (depth: number): { rest: number; peak: number } => {
-    const sim = gasB(1, 0.6);
+    const sim = gas(1, 0.6);
     sim.depth = depth;
     travel(sim, 15);
     const size = (): number => {
@@ -138,8 +139,8 @@ it('Gas B: full Loose leaves room for the kick; only a full-Deep kick reaches fu
   expect(usual.peak - usual.rest).toBeLessThan((deep.peak - deep.rest) * 0.6);
 });
 
-it('Gas B drifts slowly and floats round the cloud rather than circling on the spot', () => {
-  const sim = gasB(1, 0);
+it('Gas drifts slowly and floats round the cloud rather than circling on the spot', () => {
+  const sim = gas(1, 0);
   travel(sim, 10);
   const x0 = Float32Array.from(sim.x);
   const y0 = Float32Array.from(sim.y);
@@ -148,21 +149,21 @@ it('Gas B drifts slowly and floats round the cloud rather than circling on the s
   let net = 0;
   for (let i = 0; i < sim.count; i++) net += Math.hypot(sim.x[i] - x0[i], sim.y[i] - y0[i]);
   net /= sim.count;
-  // Slow: a fraction of Gas A's ~1 px a step (15 s is 900 steps)...
+  // Slow: a fraction of a pixel a step (15 s is 900 steps)...
   expect(path / 900).toBeLessThan(0.2);
-  // ...but it gets somewhere, on paths far straighter than a jiggle (Gas A's ~0.04).
+  // ...but it gets somewhere, on paths far straighter than a jiggle (~0.04).
   expect(net).toBeGreaterThan(8);
   expect(net / path).toBeGreaterThan(0.1);
 });
 
-it('Gas B ignores the pointer', () => {
-  const sim = gasB(0.9, 0);
+it('Gas ignores the pointer', () => {
+  const sim = gas(0.9, 0);
   const p = sim.pointer as unknown as { x: number; y: number; active: boolean };
   travel(sim, 2);
   p.active = true;
   p.x = CX;
   p.y = CY;
-  // A pole would pull particles in; a fluid body would push them aside. Gas B does neither.
+  // A pole would pull particles in; a fluid body would push them aside. Gas does neither.
   sim.pole = 1;
   const near = (): number => sim.x.filter((x, j) => Math.hypot(x - CX, sim.y[j] - CY) < 40).length;
   const before = near();

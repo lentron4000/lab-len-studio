@@ -1,7 +1,7 @@
 // Sound Toy — Copyright (c) 2026 Lenny Ford, Len Studio (https://len.studio)
 // SPDX-License-Identifier: MIT. If you use or adapt this, credit "Sound Toy by Lenny Ford (len.studio)".
 
-export type PhysicsModeId = 'gas' | 'gasB' | 'water';
+export type PhysicsModeId = 'gas' | 'water';
 
 /**
  * Behaviour at the fully open ("cloud") end of the State slider. The solid end is shared by all
@@ -29,7 +29,7 @@ export interface PhysicsMode {
   thermal: number;
   /** Visual jitter added at draw time (vibration), in pixels at full energy. */
   jitter: number;
-  /** Whether the pointer acts on it at all (gas B is left to drift on its own). */
+  /** Whether the pointer acts on it at all (gas is left to drift on its own). */
   pointer: boolean;
   /** Pointer gravity (negative repels). */
   pointerGravity: number;
@@ -53,19 +53,11 @@ export interface PhysicsMode {
   /** State at the slider's loose end, the whole slider scaled to fit (0–1); looseCap then clips it. */
   looseRange: number;
   /**
-   * Vapour modes: how far a kick opens it toward the cloud end. The hit (× Depth, plus any blast) is
-   * scaled by kickReach and capped at fully open, then by kickOpen: gas A keeps every kick to a breath
-   * (reach 1, open 0.3); gas B opens in step with Depth, fully only for a full-Deep kick.
-   */
-  kickReach: number;
-  kickOpen: number;
-  /**
-   * Dot size and scatter follow the state × this (capped at 1), so a mode whose slider tops out lower
-   * (to sit smaller) still looks as loose as gas A at the same slider position: small dots, well scattered.
+   * How loose it looks and moves: dot size, scatter, molecular speed and drag follow the state × this
+   * (capped at 1). Gas tops its slider out low (looseRange) so a kick has room to swell it, but at full
+   * Loose it still looks fully loose: small dots, well scattered.
    */
   sizeGain: number;
-  /** Share of a kick's opening that shrinks the dots (gas B opens 1/0.3 as far as gas A, so 0.3 keeps them alike). */
-  kickShrink: number;
   /** Kicks travel out from the centre as a ripple instead of moving everything at once (0 or 1). */
   ripple: number;
   /**
@@ -92,38 +84,6 @@ export const PHYSICS_MODES: Record<PhysicsModeId, PhysicsMode> = {
     damping: 0.999,
     thermal: 0.06,
     jitter: 0.35,
-    pointer: true,
-    pointerGravity: 2600,
-    pointerWake: 0.12,
-    repulsion: 0.45,
-    cohesion: 0,
-    viscosity: 0,
-    range: 1.1,
-    vapor: 1,
-    ripple: 0,
-    atmosphere: 0,
-    looseCap: 1,
-    looseRange: 0.9,
-    kickReach: 1,
-    kickOpen: 0.3,
-    sizeGain: 1,
-    kickShrink: 1,
-    loosePointer: 1,
-    description:
-      'Air. Molecules fly in straight lines and bounce off each other. Sweep the pointer through to push a current; it diffuses back.',
-  },
-  gasB: {
-    spring: 0.006,
-    homeWeight: 0,
-    contain: 0.0018,
-    containRadius: 1.2,
-    shellInner: 0.78,
-    shellOuter: 1.22,
-    shellStrength: 0.006,
-    speed: 1.5,
-    damping: 0.999,
-    thermal: 0.06,
-    jitter: 0.35,
     pointer: false,
     pointerGravity: 2600,
     pointerWake: 0.12,
@@ -136,13 +96,10 @@ export const PHYSICS_MODES: Record<PhysicsModeId, PhysicsMode> = {
     atmosphere: 1,
     looseCap: 1,
     looseRange: 0.55,
-    kickReach: 0.4,
-    kickOpen: 1,
-    sizeGain: 0.9 / 0.55, // its slider tops out at 0.55; gas A's at 0.9
-    kickShrink: 0.3,
+    sizeGain: 0.9 / 0.55, // full Loose looks as loose as a state of 0.9, while sitting at 0.55
     loosePointer: 1,
     description:
-      'Gas B: an atmosphere. Banded rings drift in opposite directions and slow currents swirl through them. Music or the pointer stirs it, a kick shatters the bands into eddies, and Tight resists.',
+      'Gas. It drifts slowly, like smoke, and now and then gathers into rings that form and fade in different places. Music stirs it, a kick swells and churns it, and Tight holds it still.',
   },
   water: {
     spring: 0.006,
@@ -168,10 +125,7 @@ export const PHYSICS_MODES: Record<PhysicsModeId, PhysicsMode> = {
     atmosphere: 0,
     looseCap: 0.75,
     looseRange: 1,
-    kickReach: 1,
-    kickOpen: 0.3,
     sizeGain: 1,
-    kickShrink: 1,
     loosePointer: 0.35,
     description:
       'Liquid. No fixed positions, only cohesion and surface tension. It swirls, pulls into tendrils and pools back together.',
