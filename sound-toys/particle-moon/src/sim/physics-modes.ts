@@ -1,7 +1,7 @@
 // Sound Toy — Copyright (c) 2026 Lenny Ford, Len Studio (https://len.studio)
 // SPDX-License-Identifier: MIT. If you use or adapt this, credit "Sound Toy by Lenny Ford (len.studio)".
 
-export type PhysicsModeId = 'gas' | 'water' | 'attract' | 'repel';
+export type PhysicsModeId = 'gas' | 'water';
 
 /**
  * Behaviour at the fully open ("cloud") end of the State slider. The solid end is shared by all
@@ -39,8 +39,6 @@ export interface PhysicsMode {
   viscosity: number;
   /** Interaction range in mean particle spacings. */
   range: number;
-  /** Field is on even when the pointer is still (magnetic poles). */
-  alwaysOn: boolean;
   /**
    * How a kick turns it to vapour (0 = not at all): the opened particles wander and slow instead of
    * speeding up, and some evaporate, drifting off before condensing back.
@@ -79,7 +77,6 @@ export const PHYSICS_MODES: Record<PhysicsModeId, PhysicsMode> = {
     cohesion: 0,
     viscosity: 0,
     range: 1.1,
-    alwaysOn: false,
     vapor: 1,
     ripple: 0,
     looseCap: 1,
@@ -106,7 +103,6 @@ export const PHYSICS_MODES: Record<PhysicsModeId, PhysicsMode> = {
     cohesion: 0.5,
     viscosity: 0.05,
     range: 2,
-    alwaysOn: false,
     vapor: 0,
     ripple: 1,
     looseCap: 0.75,
@@ -114,58 +110,5 @@ export const PHYSICS_MODES: Record<PhysicsModeId, PhysicsMode> = {
     loosePointer: 0.35,
     description:
       'Liquid. No fixed positions, only cohesion and surface tension. It swirls, pulls into tendrils and pools back together.',
-  },
-  attract: {
-    spring: 0.012,
-    homeWeight: 1,
-    contain: 0,
-    containRadius: 1,
-    shellInner: 1,
-    shellOuter: 1,
-    shellStrength: 0,
-    speed: 0,
-    damping: 0.95,
-    thermal: 0.3,
-    jitter: 0.9,
-    pointerGravity: 22000,
-    pointerWake: 0.03,
-    repulsion: 0.9,
-    cohesion: 0,
-    viscosity: 0,
-    range: 2,
-    alwaysOn: true,
-    vapor: 0,
-    ripple: 0,
-    looseCap: 1,
-    looseRange: 1,
-    loosePointer: 1,
-    description: 'The pointer and the moon are opposite poles. Particles are pulled in and pack around them.',
-  },
-  repel: {
-    spring: 0.012,
-    homeWeight: 1,
-    contain: 0,
-    containRadius: 1,
-    shellInner: 1,
-    shellOuter: 1,
-    shellStrength: 0,
-    speed: 0,
-    damping: 0.95,
-    thermal: 0.3,
-    jitter: 0.9,
-    pointerGravity: -22000,
-    pointerWake: 0.03,
-    repulsion: 0.9,
-    cohesion: 0,
-    viscosity: 0,
-    range: 2,
-    alwaysOn: true,
-    vapor: 0,
-    ripple: 0,
-    looseCap: 1,
-    looseRange: 1,
-    loosePointer: 1,
-    description:
-      'The pointer and the moon are like poles. Particles are pushed aside and close in behind them.',
   },
 };

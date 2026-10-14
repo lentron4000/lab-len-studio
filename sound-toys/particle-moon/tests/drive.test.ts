@@ -48,13 +48,9 @@ const spreadAfter = (strength: number, depth: number, mode: keyof typeof PHYSICS
 
 describe('drive', () => {
   it('a kick at full Depth hits like the hardest pad at the default Depth', () => {
-    for (const mode of ['gas', 'repel'] as const) {
-      const pad = spreadAfter(BLAST_MAX, 0.65, mode);
-      const depth = spreadAfter(1, DEPTH_MAX, mode);
-      expect(Math.abs(depth - pad) / pad, mode).toBeLessThan(0.12);
-    }
-    // The poles still blast apart.
-    expect(spreadAfter(BLAST_MAX, 0.65, 'repel')).toBeGreaterThan(1.4);
+    const pad = spreadAfter(BLAST_MAX, 0.65);
+    const depth = spreadAfter(1, DEPTH_MAX);
+    expect(Math.abs(depth - pad) / pad).toBeLessThan(0.12);
   });
 
   it('gas breathes at full Depth: a modest swell around a core that stays, not a ring', () => {
@@ -66,9 +62,10 @@ describe('drive', () => {
   });
 
   it('steady kicks at full Depth keep the shape on screen (blasts recharge between hits)', () => {
-    for (const mode of ['gas', 'attract', 'repel'] as const) {
+    for (const pole of [0, 1, -1] as const) {
       const sim = new Simulation(1500);
-      sim.mode = PHYSICS_MODES[mode];
+      sim.mode = PHYSICS_MODES.gas;
+      sim.pole = pole;
       sim.moon.enabled = false;
       sim.stateTarget = sim.state = 0.1;
       sim.depth = DEPTH_MAX;

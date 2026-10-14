@@ -54,6 +54,8 @@ const VAPOR_LIFE_TIGHT = 0.6;
  * travelling at EDDY_RATE radians per step). Evaporated gas is flung sideways VAPOR_FLING × speed.
  */
 const BODY_RADIUS = 0.08;
+/** A pole's pull (attract) or push (repel) on the pointer's surroundings, before scaling. */
+const POLE_GRAVITY = 22000;
 /** Attract and repel: the pointer's pull or push on a fully tight shape, relative to loose. */
 const POLE_TIGHT = 2.5;
 /** Attract: particles near the mouse (within about HUDDLE_REACH shape radii) push each other HUDDLE_PACK less. */
@@ -250,6 +252,11 @@ export class Simulation {
   readonly moon = new Moon();
 
   mode: PhysicsMode = PHYSICS_MODES.gas;
+  /**
+   * Poles on top of the physics: 1 attract, −1 repel, 0 off. With a pole on, the pointer and the moon are
+   * magnets (always on, even when still) instead of bodies moving through the fluid.
+   */
+  pole: -1 | 0 | 1 = 0;
   /** State slider, 0 = solid, 1 = cloud. */
   stateTarget = 0.5;
   /**
@@ -641,8 +648,9 @@ export class Simulation {
     moon.step(cx, cy, R, this.bpm);
     const moonOn = moon.visible;
     const mr = moon.radius;
-    const magnet = mode.alwaysOn
-      ? Math.sign(mode.pointerGravity) * Math.max(k, 0.02) * R * lerp(0.4, 1, e) * moon.presence * moon.force
+    const poleOn = this.pole !== 0;
+    const magnet = poleOn
+      ? this.pole * Math.max(k, 0.02) * R * lerp(0.4, 1, e) * moon.presence * moon.force
       : 0;
     const magnetReach2 = (R * 0.65) ** 2;
     const flowR = mr * 5;
@@ -659,7 +667,7 @@ export class Simulation {
     // Repel: the moon presses a beam into the shape, aimed at its centre. Gentle, it's broad and shallow,
     // like a hand pushed into a balloon; at full Force it narrows and reaches halfway through (the
     // centre), never further. The push fades out toward that depth, so particles bank up at the end.
-    const beam = mode.alwaysOn && mode.pointerGravity < 0 && moonOn;
+    const beam = this.pole < 0 && moonOn;
     const beamForce = Math.min(1, moon.force / MOON_FORCE_MAX);
     let ux = 0;
     let uy = 0;
@@ -705,10 +713,10 @@ export class Simulation {
     // Loose water flings easily, so the pointer is gentler there (see PhysicsMode.loosePointer).
     const pointerScale = lerp(1, mode.loosePointer, slider);
     // Magnetic poles hold harder against a tight shape, whose springs otherwise hold it in place.
-    const poleBoost = mode.alwaysOn ? lerp(POLE_TIGHT, 1, slider) : 1;
+    const poleBoost = poleOn ? lerp(POLE_TIGHT, 1, slider) : 1;
     const gravity =
-      mode.pointerGravity *
-      (mode.alwaysOn ? 1 : 0.25 + 0.75 * pointer.activity) *
+      (poleOn ? this.pole * POLE_GRAVITY : mode.pointerGravity) *
+      (poleOn ? 1 : 0.25 + 0.75 * pointer.activity) *
       (R / 220) *
       pointerScale *
       poleBoost;
@@ -717,7 +725,7 @@ export class Simulation {
     const wakeR2 = (R * 0.35) ** 2;
     const huddleReach2 = (R * HUDDLE_REACH) ** 2;
     // Gas and water: the pointer is a solid body moving through the fluid (see the fluid branch below).
-    const fluidPointer = !mode.alwaysOn;
+    const fluidPointer = !poleOn;
     const pvx = pointer.vx;
     const pvy = pointer.vy;
     const pSpeed = Math.hypot(pvx, pvy);

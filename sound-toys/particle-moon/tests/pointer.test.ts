@@ -3,9 +3,10 @@ import { PHYSICS_MODES, type PhysicsModeId } from '../src/sim/physics-modes';
 import { Simulation } from '../src/sim/simulation';
 
 /** Particles within `radius` px of a pointer held still over the shape, before and after 3 s. */
-function gathered(mode: PhysicsModeId, radius = 40): [before: number, after: number] {
+function gathered(mode: PhysicsModeId, radius = 40, pole: -1 | 0 | 1 = 0): [before: number, after: number] {
   const sim = new Simulation(1500);
   sim.mode = PHYSICS_MODES[mode];
+  sim.pole = pole;
   sim.moon.enabled = false;
   sim.stateTarget = sim.state = 0.6;
   sim.setViewport({ width: 1440, height: 900, radius: 300, cx: 720, cy: 450 }, true);
@@ -20,7 +21,7 @@ function gathered(mode: PhysicsModeId, radius = 40): [before: number, after: num
   return [before, near()];
 }
 
-it('a still pointer: gas ignores it, liquid keeps clear of it, attract gathers', () => {
+it('a still pointer: gas ignores it, liquid keeps clear of it, an attract pole gathers', () => {
   const [gasBefore, gasAfter] = gathered('gas');
   // Gas neither pulls in nor pushes away for a still pointer.
   expect(gasAfter).toBeLessThanOrEqual(gasBefore + 4);
@@ -28,6 +29,8 @@ it('a still pointer: gas ignores it, liquid keeps clear of it, attract gathers',
   // Liquid treats it as a solid object: dots keep 2 px clear of the cursor circle (7.5 px).
   const [, liquidAfter] = gathered('water', 9);
   expect(liquidAfter).toBe(0);
-  const [before, after] = gathered('attract');
-  expect(after).toBeGreaterThan(before * 2);
+  for (const mode of ['gas', 'water'] as const) {
+    const [before, after] = gathered(mode, 40, 1);
+    expect(after, mode).toBeGreaterThan(before * 2);
+  }
 });

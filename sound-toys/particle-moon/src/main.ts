@@ -103,6 +103,18 @@ class App implements ControlHost {
       this.driving = false;
     },
     setOption: (group, id) => {
+      if (group === 'pole') {
+        // Toggles: switch on the one asked for, or switch off whichever is on.
+        const boxes = document.querySelectorAll<HTMLInputElement>('input[name="pole"]');
+        const want = Array.from(boxes).find((b) => b.value === id);
+        const on = Array.from(boxes).find((b) => b.checked);
+        const click = want ? (want.checked ? null : want) : on;
+        if (!click) return;
+        this.driving = true;
+        click.click();
+        this.driving = false;
+        return;
+      }
       const el = document.querySelector<HTMLInputElement>(`input[name="${group}"][value="${id}"]`);
       if (!el || el.checked) return;
       this.driving = true;
@@ -186,7 +198,7 @@ class App implements ControlHost {
     const handBack = (e: Event): void => {
       const el = e.target;
       if (this.driving || !(el instanceof HTMLInputElement)) return;
-      this.director.touch(el.type === 'radio' ? el.name : el.id);
+      this.director.touch(el.type === 'radio' || el.type === 'checkbox' ? el.name : el.id);
     };
     this.panel.addEventListener('input', handBack, true);
     this.panel.addEventListener('change', handBack, true);

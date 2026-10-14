@@ -103,6 +103,7 @@ describe('AI mode', () => {
       play(director, f, 10, 0, 124);
       const spins = { disc: new Set<number>(), globe: new Set<number>() };
       const orbits = new Set<number>();
+      const poles = new Set<string>();
       let t = 10;
       let settled = 0;
       let look = '';
@@ -115,7 +116,9 @@ describe('AI mode', () => {
         const now = `${options.get('mode')}/${options.get('shape')}/${options.get('moon')}`;
         settled = now === look ? settled + 1 : 0;
         look = now;
-        if (options.get('moon') === 'off') expect(['gas', 'water']).toContain(options.get('mode'));
+        expect(['gas', 'water']).toContain(options.get('mode'));
+        if (options.get('moon') === 'off') expect(options.get('pole') ?? 'off').toBe('off');
+        if (options.get('pole') && options.get('pole') !== 'off') poles.add(options.get('pole')!);
         if (settled < 10) continue; // let the sliders glide in
         const spin = sliders.get('spin') ?? 0;
         const shape = options.get('shape') === 'globe' ? 'globe' : 'disc';
@@ -126,6 +129,8 @@ describe('AI mode', () => {
       expect(spins.disc.size).toBeGreaterThanOrEqual(f === ambient ? 3 : 1);
       expect(Math.max(...spins.globe)).toBeGreaterThan(4);
       expect(orbits.size).toBeGreaterThanOrEqual(3);
+      // With the moon on, a groove's looks put a pole over the physics now and then.
+      if (f === groove) expect(poles.size).toBeGreaterThan(0);
     }
   });
 

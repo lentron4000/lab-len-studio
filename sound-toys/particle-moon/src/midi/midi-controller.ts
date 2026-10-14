@@ -156,6 +156,8 @@ export class MidiController {
         el.checked = true;
         el.dispatchEvent(new Event('change'));
       }
+    } else if (el instanceof HTMLInputElement && el.type === 'checkbox') {
+      if (pressed) el.click();
     } else if (el instanceof HTMLButtonElement && pressed) {
       el.click();
     }

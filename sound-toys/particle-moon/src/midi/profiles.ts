@@ -5,7 +5,7 @@
 export type SourceKey = `cc:${number}` | `note:${number}`;
 
 /**
- * Source → control. A control is the id of a slider, radio or button in the panel, or a toggle
+ * Source → control. A control is the id of a slider, radio, checkbox or button in the panel, or a toggle
  * id from TOGGLES. MIDI moves the same controls the mouse does, so every input path is identical.
  */
 export type MidiMap = Partial<Record<SourceKey, string>>;
@@ -38,8 +38,8 @@ export const MPK_MINI: ControllerProfile = {
     'cc:75': 'intensity',
     'note:36': 'mode-gas',
     'note:37': 'mode-water',
-    'note:38': 'mode-attract',
-    'note:39': 'mode-repel',
+    'note:38': 'pole-attract',
+    'note:39': 'pole-repel',
     'note:40': 'kick',
     'note:41': 'toggle-shape',
     'note:42': 'toggle-moon',

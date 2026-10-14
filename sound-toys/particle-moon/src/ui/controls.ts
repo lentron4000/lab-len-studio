@@ -101,11 +101,29 @@ export function bindControls(host: ControlHost): {
   });
 
   const desc = byId('desc');
+  const POLE_DESC = {
+    attract: 'The pointer and the moon are opposite poles: particles are pulled in and pack around them.',
+    repel: 'The pointer and the moon are like poles: particles are pushed aside and close in behind them.',
+  };
+  const describe = (): void => {
+    const pole = sim.pole > 0 ? POLE_DESC.attract : sim.pole < 0 ? POLE_DESC.repel : '';
+    desc.textContent = pole ? `${sim.mode.description} ${pole}` : sim.mode.description;
+  };
   onRadio('mode', (v) => {
     sim.mode = PHYSICS_MODES[v as PhysicsModeId];
-    desc.textContent = sim.mode.description;
+    describe();
   });
-  desc.textContent = sim.mode.description;
+  // Attract and Repel: toggles on top of the physics, at most one at a time.
+  const poles = Array.from(document.querySelectorAll<HTMLInputElement>('input[name="pole"]'));
+  for (const box of poles) {
+    box.addEventListener('change', () => {
+      if (box.checked) for (const other of poles) if (other !== box) other.checked = false;
+      const on = poles.find((p) => p.checked)?.value;
+      sim.pole = on === 'attract' ? 1 : on === 'repel' ? -1 : 0;
+      describe();
+    });
+  }
+  describe();
 
   const spin = byId('spin', HTMLInputElement);
   const spinOut = byId('spin-out');

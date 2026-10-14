@@ -7,7 +7,7 @@ export type Scene = 'drift' | 'groove' | 'build' | 'drop' | 'breakdown';
 
 /** A slider the director plays (0–1 across its range) or a set of options it picks from. */
 type SliderId = 'state' | 'depth' | 'spin' | 'orbit' | 'mforce';
-type OptionGroup = 'mode' | 'shape' | 'moon';
+type OptionGroup = 'mode' | 'shape' | 'moon' | 'pole';
 
 /** Where the director wants things, per scene. Sliders 0–1 across their range. */
 interface Look {
@@ -137,7 +137,8 @@ export class Director {
     orbit: 3 / 8,
     mforce: 0.5,
   };
-  private readonly chosen: Record<OptionGroup, string> = { mode: '', shape: '', moon: '' };
+  /** `mode` is the look's physics: gas or water, or attract / repel (a pole over either). */
+  private readonly chosen: Record<OptionGroup, string> = { mode: '', shape: '', moon: '', pole: '' };
   private readonly touched = new Map<string, number>();
   private now = 0;
   private bpm = 0;
@@ -147,7 +148,7 @@ export class Director {
   /** Starts from where the controls are now, so switching on doesn't jump. */
   start(current: Record<SliderId, number>): void {
     Object.assign(this.value, current);
-    this.chosen.mode = this.chosen.shape = this.chosen.moon = '';
+    this.chosen.mode = this.chosen.shape = this.chosen.moon = this.chosen.pole = '';
     this.lookScene = null;
     this.lookBeats = 0;
     // Pan from wherever the shape sits now.
@@ -256,7 +257,7 @@ export class Director {
     this.choose('moon', moon);
     // Attract and repel are poles for the moon: without it, only gas and liquid.
     const modes = moon === 'on' ? look.modes : look.modes.filter((m) => m !== 'attract' && m !== 'repel');
-    this.choose('mode', pick(modes.length ? modes : ['water', 'gas'], this.chosen.mode));
+    this.choosePhysics(pick(modes.length ? modes : ['water', 'gas'], this.chosen.mode), look.modes);
     const shape = pick(look.shapes, this.chosen.shape);
     this.choose('shape', shape);
     this.pickSpeeds(f, shape === 'globe' || (this.chosen.shape === 'globe' && !this.free('shape')));
@@ -393,6 +394,22 @@ export class Director {
           swing: 0,
         };
     }
+  }
+
+  /**
+   * Attract and repel are poles over gas or liquid: a pole look turns that pole on (over one of the
+   * look's base modes, or either), a gas or liquid look turns any pole off.
+   */
+  private choosePhysics(id: string, options: readonly string[]): void {
+    if (this.chosen.mode === id) return;
+    this.chosen.mode = id;
+    const isPole = id === 'attract' || id === 'repel';
+    this.choose('pole', isPole ? id : 'off');
+    const bases = options.filter((m) => m === 'gas' || m === 'water');
+    const from = bases.length ? bases : ['gas', 'water'];
+    const base = isPole ? from[Math.floor(Math.random() * from.length)] : id;
+    // (`chosen.mode` holds the look, so the base mode is set directly.)
+    if (this.free('mode')) this.controls.setOption('mode', base);
   }
 
   private choose(group: OptionGroup, id: string): void {
