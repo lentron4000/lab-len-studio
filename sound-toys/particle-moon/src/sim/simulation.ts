@@ -96,6 +96,7 @@ const REST_MIN = 0.5;
 const REST_MAX = 3;
 /** Depth velocity kept per step while the shape is flat. */
 const FLAT_Z_DAMPING = 0.93;
+const SILENT_Z_DAMPING = 0.8;
 /** Water: seconds for a kick's ripple to cross the shape, at Tight and at Loose; and rings alive at once. */
 const RIPPLE_SECONDS: readonly [number, number] = [0.45, 0.8];
 const MAX_RIPPLES = 6;
@@ -208,6 +209,8 @@ export class Simulation {
   /** Bars per revolution of the globe; 0 = stopped. */
   spinBars = 0;
   bpm = 100;
+  /** 0–1: how much sound there is. Without it the shape is perfectly still: no thermal tremble. */
+  sound = 0;
   /** 0 = disc, 1 = globe; the shape morphs toward it. */
   shapeTarget = 0;
 
@@ -488,7 +491,8 @@ export class Simulation {
     const targetSpeed = mode.speed * lerp(e, slider, mode.vapor) * scale * (1 - fw);
     const damping = lerp(lerp(SOLID.damping, mode.damping, e), 0.9, fw) * (1 - 0.1 * gassy);
     const formR = re * FORMATION_SCALE * (1 + 0.3 * burn);
-    const thermal = (lerp(SOLID.thermal, mode.thermal, e) * (1 + 10 * gassy) + burn * 1.5) * scale;
+    const thermal =
+      (lerp(SOLID.thermal, mode.thermal, e) * (1 + 10 * gassy) * this.sound + burn * 1.5) * scale;
     // Share of particles a kick evaporates: grows with the hit's force, mostly from the edge.
     const evaporate =
       mode.vapor *
@@ -635,7 +639,8 @@ export class Simulation {
     const zPin = 0.08 * (1 - gw);
     // A flat shape (the disc, or a held formation) bleeds off depth motion. Without this, the moon's
     // nudges in z ring on a frictionless pin: particles bob toward the camera, swelling and glowing.
-    const zDamp = lerp(1, FLAT_Z_DAMPING, Math.max(1 - gw, fw));
+    // (Harder in silence, where no thermal jitter breaks up the bobbing.)
+    const zDamp = lerp(1, lerp(SILENT_Z_DAMPING, FLAT_Z_DAMPING, this.sound), Math.max(1 - gw, fw));
     const vmax = 25 * scale;
     // Excitation: speed above the mode's resting motion at the slider's state (gas always flies; that
     // alone shouldn't glow, but a kick that heats it should).

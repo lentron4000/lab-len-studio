@@ -3,8 +3,10 @@
 import './styles.css';
 import { AudioEngine } from './audio/audio-engine';
 import { Transport } from './audio/transport';
+import { Director } from './auto/director';
+import { MusicListener } from './auto/listener';
 import { labMode } from './lab-mode';
-import { byId } from './lib/dom';
+import { byId, isShortcut } from './lib/dom';
 import { nowSeconds } from './lib/math';
 import { load, save, StorageKey } from './lib/storage';
 import { MidiController } from './midi/midi-controller';
@@ -84,6 +86,37 @@ class App implements ControlHost {
   private bloomStart = 0;
   private uiShown = false;
 
+  /** AI mode: listens to the music and plays the controls (Auto button, A). */
+  private readonly listener = new MusicListener();
+  private readonly director = new Director({
+    setSlider: (id, value01) => {
+      this.driving = true;
+      const el = byId(id, HTMLInputElement);
+      const min = Number(el.min);
+      const max = Number(el.max);
+      const step = Number(el.step) || 1;
+      const value = String(Math.round((min + (max - min) * Math.min(1, Math.max(0, value01))) / step) * step);
+      if (el.value !== value) {
+        el.value = value;
+        el.dispatchEvent(new Event('input'));
+      }
+      this.driving = false;
+    },
+    setOption: (group, id) => {
+      const el = document.querySelector<HTMLInputElement>(`input[name="${group}"][value="${id}"]`);
+      if (!el || el.checked) return;
+      this.driving = true;
+      el.checked = true;
+      el.dispatchEvent(new Event('change'));
+      this.driving = false;
+    },
+    fire: (strength) => {
+      this.fire(strength);
+    },
+  });
+  /** True while the director moves a control, so its own moves aren't taken as the performer's. */
+  private driving = false;
+
   constructor() {
     const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
     this.renderer = new Renderer(this.canvas, this.sim, reducedMotion);
@@ -131,6 +164,23 @@ class App implements ControlHost {
     requestAnimationFrame((t) => {
       this.frame(t);
     });
+    this.audio.onAnalysis = (frames) => {
+      this.listener.push(frames, nowSeconds());
+    };
+    byId('auto').addEventListener('click', () => {
+      this.toggleAuto();
+    });
+    window.addEventListener('keydown', (e) => {
+      if (isShortcut(e, 'a')) this.toggleAuto();
+    });
+    // Anything the performer (or a MIDI controller) moves while AI mode plays is theirs for a while.
+    const handBack = (e: Event): void => {
+      const el = e.target;
+      if (this.driving || !(el instanceof HTMLInputElement)) return;
+      this.director.touch(el.type === 'radio' ? el.name : el.id);
+    };
+    this.panel.addEventListener('input', handBack, true);
+    this.panel.addEventListener('change', handBack, true);
     void this.open(reducedMotion);
   }
 
@@ -230,6 +280,7 @@ class App implements ControlHost {
 
     this.renderer.tick(dtMs / 1000, nowSeconds());
     this.handleTransport();
+    this.listen(dtMs / 1000);
     this.beatDot.style.opacity = (0.12 + 0.88 * this.beatFlash).toFixed(2);
     this.beatFlash *= 0.88;
 
@@ -272,12 +323,43 @@ class App implements ControlHost {
 
   /** Kicks and beats → pulses. The demo always pulses on its own kick, which is also its beat. */
   private handleTransport(): void {
-    const { kicks, beats } = this.transport.poll(nowSeconds());
+    const now = nowSeconds();
+    const { kicks, beats } = this.transport.poll(now);
+    for (const k of kicks) this.listener.kick(k, now);
     if (this.pulseOn === 'kick') for (const k of kicks) this.fire(k);
     for (let b = 0; b < beats; b++) {
       this.beatFlash = 1;
+      if (this.audio.mode === 'demo') this.listener.kick(1, now);
       if (this.pulseOn === 'beat' || this.audio.mode === 'demo') this.fire(1);
     }
+  }
+
+  /** Sound level (vibration) and AI mode, once per frame. */
+  private listen(dt: number): void {
+    const now = nowSeconds();
+    this.listener.tick(dt, now);
+    const f = this.listener.features;
+    // The demo kick isn't analysed; treat it as a steady, moderate sound.
+    const target = this.audio.mode === 'demo' ? 0.7 : this.audio.mode === 'off' ? 0 : f.loud;
+    this.sim.sound += (target - this.sim.sound) * (1 - Math.exp(-dt / (target > this.sim.sound ? 0.1 : 0.6)));
+    this.director.update(f, dt, now);
+  }
+
+  private toggleAuto(): void {
+    if (this.director.enabled) this.director.enabled = false;
+    else {
+      const read = (id: string): number => {
+        const el = byId(id, HTMLInputElement);
+        return (Number(el.value) - Number(el.min)) / (Number(el.max) - Number(el.min));
+      };
+      this.director.start({
+        state: read('state'),
+        depth: read('depth'),
+        spin: read('spin'),
+        mforce: read('mforce'),
+      });
+    }
+    byId('auto', HTMLButtonElement).setAttribute('aria-pressed', String(this.director.enabled));
   }
 
   private updateTempoReadout(): void {

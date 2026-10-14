@@ -151,7 +151,11 @@ export class Renderer {
     const dot = sim.dotRadius();
     // Ritual keeps only a trace of the jitter: per-frame wobble is what made it glitter.
     const jitter =
-      (0.9 + sim.state * 1.5 * sim.mode.jitter) * (this.reducedMotion ? 0.3 : 1) * (ritual ? 0.25 : 1);
+      (0.9 + sim.state * 1.5 * sim.mode.jitter) *
+      (this.reducedMotion ? 0.3 : 1) *
+      (ritual ? 0.25 : 1) *
+      // No sound, no vibration: silence leaves the shape perfectly still.
+      sim.sound;
     // Night flashes come from the fireflies; ritual heat comes from the physics (excitation).
     const flash = ritual ? sim.excite : this.fireflies.flash;
     // Ritual glow follows the State slider, not the kicked state: on a near-solid setting, kicks that

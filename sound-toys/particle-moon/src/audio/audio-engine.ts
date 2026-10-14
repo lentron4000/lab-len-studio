@@ -39,6 +39,8 @@ export class AudioEngine {
   mode: SourceMode = 'off';
   /** Input peak level in dBFS, with a 1.5 dB-per-frame fall. */
   levelDb = -100;
+  /** Every analysis frame from the file or live input, for listeners beyond the transport (AI mode). */
+  onAnalysis: ((frames: OnsetFrame[]) => void) | null = null;
 
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
@@ -199,6 +201,7 @@ export class AudioEngine {
           : nowSeconds() - (ctx.currentTime - last.t) + ctx.outputLatency + ctx.baseLatency;
     }
     this.transport.pushFrames(frames, heardAt);
+    this.onAnalysis?.(frames);
     for (const f of frames) this.levelDb = Math.max(f.level, this.levelDb - 1.5);
   }
 

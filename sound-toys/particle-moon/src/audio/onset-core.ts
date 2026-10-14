@@ -24,6 +24,9 @@ export interface OnsetFrame {
   loLevel: number;
   /** Raw kick-band energy (mean square). */
   loEnergy: number;
+  /** Raw mid- and high-band energy (mean square): with loEnergy, the music's tonal balance. */
+  midEnergy: number;
+  hiEnergy: number;
 }
 
 const BAND_COUNT = 3;
@@ -111,6 +114,8 @@ export class OnsetCore {
       level: 10 * Math.log10(energy[3] + 1e-12),
       loLevel: energy[0] / peak[0],
       loEnergy: energy[0],
+      midEnergy: energy[1],
+      hiEnergy: energy[2],
     };
   }
 }

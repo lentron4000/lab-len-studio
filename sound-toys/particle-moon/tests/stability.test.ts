@@ -14,3 +14,23 @@ it('an untouched gas disc stays calm with the moon passing through it', () => {
   // Before flat shapes damped depth motion, the moon pumped this to ~100 within ten seconds.
   expect(ke).toBeLessThan(10);
 });
+
+it('with no sound the tight disc is perfectly still', () => {
+  const sim = new Simulation(1500);
+  sim.setViewport({ width: 1440, height: 900, radius: 300, cx: 720, cy: 450 }, true);
+  sim.stateTarget = sim.state = 0;
+  sim.moon.enabled = false;
+  for (let i = 0; i < 600; i++) sim.step(); // settle from the starting layout
+  const x0 = Float32Array.from(sim.x);
+  const y0 = Float32Array.from(sim.y);
+  for (let i = 0; i < 120; i++) sim.step();
+  let moved = 0;
+  for (let j = 0; j < sim.count; j++) moved = Math.max(moved, Math.hypot(sim.x[j] - x0[j], sim.y[j] - y0[j]));
+  expect(moved).toBeLessThan(0.01);
+  sim.sound = 1;
+  for (let i = 0; i < 60; i++) sim.step();
+  let stirred = 0;
+  for (let j = 0; j < sim.count; j++)
+    stirred = Math.max(stirred, Math.hypot(sim.x[j] - x0[j], sim.y[j] - y0[j]));
+  expect(stirred).toBeGreaterThan(0.05);
+});
