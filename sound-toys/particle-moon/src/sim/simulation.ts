@@ -111,12 +111,13 @@ const SILENT_Z_DAMPING = 0.8;
  * percent). Off for held formations.
  */
 /**
- * The screen's edges (for projection): nothing leaves the screen. Within EDGE_CUSHION (× shape radius)
- * of an edge, outward motion is eased off the closer a particle gets, so it settles against the edge
- * rather than bouncing; at the edge itself (less EDGE_MARGIN px and the dot), it stops.
+ * The screen (for projection): flung particles meet a thickening drag on their way out, measured on an
+ * ellipse fitted inside the screen (0 at the shape's centre, 1 at the screen's edge less EDGE_MARGIN px).
+ * Outward motion fades from REACH_FROM to nothing by the edge, so a blast spends itself and lands softly
+ * at whatever depth its speed carries it; the way home is untouched.
  */
-const EDGE_CUSHION = 0.15;
-const EDGE_MARGIN = 2;
+const REACH_FROM = 0.7;
+const EDGE_MARGIN = 12;
 const CENTRE_SPRING = 0.04;
 const CENTRE_DAMPING = 0.35;
 /** Water: seconds for a kick's ripple to cross the shape, at Tight and at Loose; and rings alive at once. */
@@ -716,10 +717,8 @@ export class Simulation {
     if (e > 0.02) this.interact(re, e, scale, gw, W, H);
 
     let ke = 0;
-    const edgeLo = EDGE_MARGIN + this.dotRadius() * 1.5;
-    const edgeRight = W - edgeLo;
-    const edgeBottom = H - edgeLo;
-    const edgeCushion = R * EDGE_CUSHION;
+    const reachX = Math.max(R, Math.min(cx, W - cx) - EDGE_MARGIN);
+    const reachY = Math.max(R, Math.min(cy, H - cy) - EDGE_MARGIN);
     const centring = 1 - fw;
     const centreAx = -(CENTRE_SPRING * this.driftX + CENTRE_DAMPING * this.driftVx) * centring;
     const centreAy = -(CENTRE_SPRING * this.driftY + CENTRE_DAMPING * this.driftVy) * centring;
@@ -1159,14 +1158,30 @@ export class Simulation {
       let nvx = (vx[i] + ax) * drag;
       let nvy = (vy[i] + ay) * drag;
       let nvz = (vz[i] + az) * drag * zDamp;
-      // Screen edges: ease off outward motion inside the cushion (in screen terms, through the perspective).
-      const eps = camera / (camera - z[i]);
-      const ex = cx + (x[i] - cx) * eps;
-      const ey = cy + (y[i] - cy) * eps;
-      if (ex < edgeLo + edgeCushion && nvx < 0) nvx *= Math.max(0, (ex - edgeLo) / edgeCushion);
-      else if (ex > edgeRight - edgeCushion && nvx > 0) nvx *= Math.max(0, (edgeRight - ex) / edgeCushion);
-      if (ey < edgeLo + edgeCushion && nvy < 0) nvy *= Math.max(0, (ey - edgeLo) / edgeCushion);
-      else if (ey > edgeBottom - edgeCushion && nvy > 0) nvy *= Math.max(0, (edgeBottom - ey) / edgeCushion);
+      {
+        // Toward the screen's edge: drag on outward motion only (as seen on screen, so motion toward the
+        // camera counts too), rising steeply near the edge.
+        const ps = camera / (camera - z[i]);
+        const ox = x[i] - cx;
+        const oy = y[i] - cy;
+        const ex = (ox * ps) / reachX;
+        const ey = (oy * ps) / reachY;
+        const rho = Math.hypot(ex, ey);
+        if (rho > REACH_FROM) {
+          // Gradient of rho over the particle's 3D position: the direction that carries it outward on screen.
+          const gx = (ex / rho / reachX) * ps;
+          const gy = (ey / rho / reachY) * ps;
+          const gz = ((ex / rho / reachX) * ox + (ey / rho / reachY) * oy) * ((ps * ps) / camera);
+          const out = nvx * gx + nvy * gy + nvz * gz;
+          if (out > 0) {
+            const t = Math.min(1, (rho - REACH_FROM) / (1 - REACH_FROM));
+            const cut = (out * (1 - (1 - t) ** 3)) / (gx * gx + gy * gy + gz * gz);
+            nvx -= cut * gx;
+            nvy -= cut * gy;
+            nvz -= cut * gz;
+          }
+        }
+      }
       const sp2 = nvx * nvx + nvy * nvy + nvz * nvz;
       if (sp2 > vmax * vmax) {
         const f = vmax / Math.sqrt(sp2);
@@ -1180,20 +1195,6 @@ export class Simulation {
       x[i] += nvx;
       y[i] += nvy;
       z[i] += nvz;
-      {
-        // The edge itself: whatever got past the cushion stops there.
-        const ps = camera / (camera - z[i]);
-        const qx = cx + (x[i] - cx) * ps;
-        const qy = cy + (y[i] - cy) * ps;
-        if (qx < edgeLo || qx > edgeRight) {
-          x[i] = cx + (Math.min(edgeRight, Math.max(edgeLo, qx)) - cx) / ps;
-          vx[i] = 0;
-        }
-        if (qy < edgeLo || qy > edgeBottom) {
-          y[i] = cy + (Math.min(edgeBottom, Math.max(edgeLo, qy)) - cy) / ps;
-          vy[i] = 0;
-        }
-      }
       if (liquidHold && pointer.active) {
         // After moving: no liquid dot ends the step inside the gap round the cursor, however hard its
         // springs pulled it in.

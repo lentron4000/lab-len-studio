@@ -5,7 +5,7 @@ import { BLAST_MAX, DEPTH_MAX, Simulation } from '../src/sim/simulation';
 /** Mean distance of the particles from the centre, in shape radii. */
 function spread(sim: Simulation): number {
   let sum = 0;
-  for (let j = 0; j < sim.count; j++) sum += Math.hypot(sim.x[j] - 720, sim.y[j] - 450);
+  for (let j = 0; j < sim.count; j++) sum += Math.hypot(sim.x[j] - 1500, sim.y[j] - 1500);
   return sum / sim.count / 300;
 }
 
@@ -15,7 +15,8 @@ function hit(strength: number, depth: number): { rest: number; peak: number } {
   sim.mode = PHYSICS_MODES.gas;
   sim.moon.enabled = false;
   sim.depth = depth;
-  sim.setViewport({ width: 1440, height: 900, radius: 300, cx: 720, cy: 450 }, true);
+  // A screen far bigger than the shape, so its edge never limits the spread being measured.
+  sim.setViewport({ width: 3000, height: 3000, radius: 300, cx: 1500, cy: 1500 }, true);
   for (let i = 0; i < 200; i++) sim.step();
   const rest = spread(sim);
   sim.fire(strength);
