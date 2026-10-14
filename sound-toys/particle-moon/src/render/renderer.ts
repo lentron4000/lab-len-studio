@@ -1,6 +1,7 @@
 // Sound Toy — Copyright (c) 2026 Lenny Ford, Len Studio (https://len.studio)
 // SPDX-License-Identifier: MIT. If you use or adapt this, credit "Sound Toy by Lenny Ford (len.studio)".
 import { lerp } from '../lib/math';
+import { angularStep } from '../sim/divisions';
 import { CAMERA_DISTANCE, type Simulation } from '../sim/simulation';
 import { Embers } from './embers';
 import { Fireflies } from './fireflies';
@@ -24,9 +25,15 @@ import { Tracers } from './tracers';
 const BANDS = 4;
 /** Spinning, each particle is drawn as a streak: its smoothed screen motion over this many frames. */
 const STREAK_FRAMES = 7;
-/** Spin speed (radians per step) at which streaks reach full length; longest streak in shape radii. */
-const STREAK_FULL_SPIN = 0.0015;
-const STREAK_MAX = 0.28;
+/**
+ * Streak length follows the Spin setting: a turn every STREAK_TOP_BARS draws the longest streaks (the
+ * rim's motion over STREAK_FRAMES), faster spins keep that length, and each halving of speed below it
+ * takes an even step down, to nothing STREAK_OCTAVES halvings below. Multipliers past STREAK_GAIN_MAX
+ * frames are clipped so other motion (a kick) can't smear across the screen while the spin is slow.
+ */
+const STREAK_TOP_BARS = 2;
+const STREAK_OCTAVES = 5;
+const STREAK_GAIN_MAX = 28;
 /** A particle starts to stretch once its streak is this fraction of its own radius. */
 const STREAK_FROM = 0.3;
 /** Glow looks: sprites stamped along a streak, at most. */
@@ -199,11 +206,15 @@ export class Renderer {
     ctx.save();
     if (glow) ctx.globalCompositeOperation = 'lighter';
     // Streaks: how far each particle's motion is drawn out (0 when not spinning).
+    const spin = Math.abs(sim.spinSpeed);
+    const topSpin = angularStep(STREAK_TOP_BARS, sim.bpm || 120);
+    const reach =
+      spin > 1e-6 ? Math.max(0, 1 + Math.log2(Math.min(spin, topSpin) / topSpin) / STREAK_OCTAVES) : 0;
+    // Frames of motion that make the rim's streak `reach` of its length at the top setting.
     const streak =
-      STREAK_FRAMES *
-      Math.min(1, Math.abs(sim.spinSpeed) / STREAK_FULL_SPIN) *
+      Math.min(STREAK_GAIN_MAX, (STREAK_FRAMES * topSpin * reach) / Math.max(spin, 1e-6)) *
       (this.streakFrames > 2 ? 1 : 0);
-    const streakMax = R * STREAK_MAX;
+    const streakMax = Math.max(dot, re * topSpin * STREAK_FRAMES);
     this.streakFrames++;
     for (let b = 0; b < BANDS * 2; b++) {
       if (b === BANDS && moon.visible) this.drawMoon(camera);
