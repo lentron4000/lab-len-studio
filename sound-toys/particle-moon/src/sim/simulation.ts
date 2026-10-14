@@ -111,8 +111,9 @@ const SILENT_Z_DAMPING = 0.8;
  * percent). Off for held formations.
  */
 /**
- * The screen (for projection): flung particles meet a thickening drag on their way out, measured on an
- * ellipse fitted inside the screen (0 at the shape's centre, 1 at the screen's edge less EDGE_MARGIN px).
+ * The screen (for projection): flung particles meet a thickening drag on their way out, measured on a
+ * circle round the shape's centre (0 there, 1 at the nearest screen edge less EDGE_MARGIN px), so the
+ * shape stays round however hard it's hit.
  * Outward motion fades from REACH_FROM to nothing by the edge, so a blast spends itself and lands softly
  * at whatever depth its speed carries it; the way home is untouched.
  */
@@ -717,8 +718,7 @@ export class Simulation {
     if (e > 0.02) this.interact(re, e, scale, gw, W, H);
 
     let ke = 0;
-    const reachX = Math.max(R, Math.min(cx, W - cx) - EDGE_MARGIN);
-    const reachY = Math.max(R, Math.min(cy, H - cy) - EDGE_MARGIN);
+    const reach = Math.max(R, Math.min(cx, W - cx, cy, H - cy) - EDGE_MARGIN);
     const centring = 1 - fw;
     const centreAx = -(CENTRE_SPRING * this.driftX + CENTRE_DAMPING * this.driftVx) * centring;
     const centreAy = -(CENTRE_SPRING * this.driftY + CENTRE_DAMPING * this.driftVy) * centring;
@@ -1164,14 +1164,14 @@ export class Simulation {
         const ps = camera / (camera - z[i]);
         const ox = x[i] - cx;
         const oy = y[i] - cy;
-        const ex = (ox * ps) / reachX;
-        const ey = (oy * ps) / reachY;
+        const ex = (ox * ps) / reach;
+        const ey = (oy * ps) / reach;
         const rho = Math.hypot(ex, ey);
         if (rho > REACH_FROM) {
           // Gradient of rho over the particle's 3D position: the direction that carries it outward on screen.
-          const gx = (ex / rho / reachX) * ps;
-          const gy = (ey / rho / reachY) * ps;
-          const gz = ((ex / rho / reachX) * ox + (ey / rho / reachY) * oy) * ((ps * ps) / camera);
+          const gx = (ex / rho / reach) * ps;
+          const gy = (ey / rho / reach) * ps;
+          const gz = ((ex / rho / reach) * ox + (ey / rho / reach) * oy) * ((ps * ps) / camera);
           const out = nvx * gx + nvy * gy + nvz * gz;
           if (out > 0) {
             const t = Math.min(1, (rho - REACH_FROM) / (1 - REACH_FROM));
