@@ -126,6 +126,8 @@ const RIPPLE_WIDTH = 0.35;
 const RIPPLE_SETTLE = 0.25;
 /** Pull behind the ring relative to the push in front, balanced so the water doesn't drift outward. */
 const RIPPLE_PULL = 1.3;
+/** At full Deep a ripple pushes and lifts this much more (it reaches 10% deeper). */
+const RIPPLE_DEEP = 0.085;
 /** A kick's attack: per-frame catch-up of the opening (about four frames to land), and frames its push is spread over. */
 const KICK_ATTACK = 0.45;
 const KICK_STEPS = 4;
@@ -492,11 +494,13 @@ export class Simulation {
       // The ring both pushes particles and lifts their homes outward as it passes (a travelling bulge).
       // Harder hits grow the ring faster than the hit itself, so Deep reads clearly bigger.
       const surge = Math.min(2, (drive / 0.65) ** 0.3);
+      const deeper =
+        1 + RIPPLE_DEEP * Math.min(1, Math.max(0, (this.depth - PUMP_FROM) / (DEPTH_MAX - PUMP_FROM)));
       this.ripples.push({
         r: 0,
-        amp: shock * surge,
+        amp: shock * surge * deeper,
         glow: shockGlow,
-        lift: Math.min(2.2, drive * surge) * R * RIPPLE_LIFT,
+        lift: Math.min(2.2, drive * surge) * R * RIPPLE_LIFT * deeper,
       });
       if (this.ripples.length > MAX_RIPPLES) this.ripples.shift();
     }
