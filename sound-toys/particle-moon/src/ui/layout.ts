@@ -18,13 +18,13 @@ export function computeViewport(
 ): Viewport {
   // Controls hidden: the header is hidden too, so the shape centres on the whole screen.
   if (panel.hidden) {
-    const radius = Math.max(50, Math.min(width * 0.34, (height - 2 * BARE_MARGIN) * 0.36));
+    const radius = Math.max(50, Math.min(width * 0.3, (height - 2 * BARE_MARGIN) * 0.32));
     return { width, height, radius, cx: width / 2, cy: height / 2 };
   }
   const reserved = panel.offsetHeight + PANEL_MARGIN;
   const top = Math.max(MIN_HEADER, header.getBoundingClientRect().bottom + 12);
   const available = Math.max(160, height - reserved - top);
-  const radius = Math.max(50, Math.min(width * 0.34, available * 0.36));
+  const radius = Math.max(50, Math.min(width * 0.3, available * 0.32));
   return { width, height, radius, cx: width / 2, cy: top + (height - reserved - top) / 2 };
 }
 

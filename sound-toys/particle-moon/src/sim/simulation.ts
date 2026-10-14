@@ -110,6 +110,13 @@ const SILENT_Z_DAMPING = 0.8;
  * bodily after the moon, kicks or spin (the moon alone sloshed it ±17% of the radius each orbit; now a few
  * percent). Off for held formations.
  */
+/**
+ * The screen's edges (for projection): nothing leaves the screen. Within EDGE_CUSHION (× shape radius)
+ * of an edge, outward motion is eased off the closer a particle gets, so it settles against the edge
+ * rather than bouncing; at the edge itself (less EDGE_MARGIN px and the dot), it stops.
+ */
+const EDGE_CUSHION = 0.15;
+const EDGE_MARGIN = 2;
 const CENTRE_SPRING = 0.04;
 const CENTRE_DAMPING = 0.35;
 /** Water: seconds for a kick's ripple to cross the shape, at Tight and at Loose; and rings alive at once. */
@@ -709,6 +716,10 @@ export class Simulation {
     if (e > 0.02) this.interact(re, e, scale, gw, W, H);
 
     let ke = 0;
+    const edgeLo = EDGE_MARGIN + this.dotRadius() * 1.5;
+    const edgeRight = W - edgeLo;
+    const edgeBottom = H - edgeLo;
+    const edgeCushion = R * EDGE_CUSHION;
     const centring = 1 - fw;
     const centreAx = -(CENTRE_SPRING * this.driftX + CENTRE_DAMPING * this.driftVx) * centring;
     const centreAy = -(CENTRE_SPRING * this.driftY + CENTRE_DAMPING * this.driftVy) * centring;
@@ -1148,6 +1159,14 @@ export class Simulation {
       let nvx = (vx[i] + ax) * drag;
       let nvy = (vy[i] + ay) * drag;
       let nvz = (vz[i] + az) * drag * zDamp;
+      // Screen edges: ease off outward motion inside the cushion (in screen terms, through the perspective).
+      const eps = camera / (camera - z[i]);
+      const ex = cx + (x[i] - cx) * eps;
+      const ey = cy + (y[i] - cy) * eps;
+      if (ex < edgeLo + edgeCushion && nvx < 0) nvx *= Math.max(0, (ex - edgeLo) / edgeCushion);
+      else if (ex > edgeRight - edgeCushion && nvx > 0) nvx *= Math.max(0, (edgeRight - ex) / edgeCushion);
+      if (ey < edgeLo + edgeCushion && nvy < 0) nvy *= Math.max(0, (ey - edgeLo) / edgeCushion);
+      else if (ey > edgeBottom - edgeCushion && nvy > 0) nvy *= Math.max(0, (edgeBottom - ey) / edgeCushion);
       const sp2 = nvx * nvx + nvy * nvy + nvz * nvz;
       if (sp2 > vmax * vmax) {
         const f = vmax / Math.sqrt(sp2);
@@ -1161,6 +1180,20 @@ export class Simulation {
       x[i] += nvx;
       y[i] += nvy;
       z[i] += nvz;
+      {
+        // The edge itself: whatever got past the cushion stops there.
+        const ps = camera / (camera - z[i]);
+        const qx = cx + (x[i] - cx) * ps;
+        const qy = cy + (y[i] - cy) * ps;
+        if (qx < edgeLo || qx > edgeRight) {
+          x[i] = cx + (Math.min(edgeRight, Math.max(edgeLo, qx)) - cx) / ps;
+          vx[i] = 0;
+        }
+        if (qy < edgeLo || qy > edgeBottom) {
+          y[i] = cy + (Math.min(edgeBottom, Math.max(edgeLo, qy)) - cy) / ps;
+          vy[i] = 0;
+        }
+      }
       if (liquidHold && pointer.active) {
         // After moving: no liquid dot ends the step inside the gap round the cursor, however hard its
         // springs pulled it in.

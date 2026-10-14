@@ -84,7 +84,6 @@ canvas#c {
 }
 /* Bare (controls hidden): nothing but the shape. The cursor and Controls button
    come back for a moment when the pointer moves. */
-.top,
 .btn kbd,
 .hit kbd {
   color: inherit;
@@ -96,6 +95,7 @@ canvas#c {
   background: var(--ink);
   color: var(--paper);
 }
+.top,
 .tab-show {
   transition: opacity 0.4s ease;
 }
