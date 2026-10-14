@@ -126,14 +126,6 @@ const RIPPLE_WIDTH = 0.35;
 const RIPPLE_SETTLE = 0.25;
 /** Pull behind the ring relative to the push in front, balanced so the water doesn't drift outward. */
 const RIPPLE_PULL = 1.3;
-/**
- * Liquid's own Depth: its ripples carry the hit times this gain, so the slider's middle already makes a
- * deep, clear ring and full Deep about twice that. The lift (home bulge) grows to RIPPLE_LIFT_MAX.
- */
-const RIPPLE_GAIN = 3.4;
-const RIPPLE_LIFT_MAX = 6;
-/** Ripple strength at Tight and at Liquid's loosest: loose water is slack, so it gets more to read as deep. */
-const RIPPLE_STATE: readonly [number, number] = [0.85, 1.35];
 /** A kick's attack: per-frame catch-up of the opening (about four frames to land), and frames its push is spread over. */
 const KICK_ATTACK = 0.45;
 const KICK_STEPS = 4;
@@ -499,19 +491,12 @@ export class Simulation {
     if (shock && mode.ripple) {
       // The ring both pushes particles and lifts their homes outward as it passes (a travelling bulge).
       // Harder hits grow the ring faster than the hit itself, so Deep reads clearly bigger.
-      const toLoose = lerp(RIPPLE_STATE[0], RIPPLE_STATE[1], Math.min(1, slider / mode.looseCap) ** 2);
-      const ripple = drive * RIPPLE_GAIN * toLoose;
-      const surge = Math.min(2, (ripple / 0.65) ** 0.3);
+      const surge = Math.min(2, (drive / 0.65) ** 0.3);
       this.ripples.push({
         r: 0,
-        amp: (shock / drive) * ripple * surge,
+        amp: shock * surge,
         glow: shockGlow,
-        lift:
-          RIPPLE_LIFT_MAX *
-          toLoose *
-          Math.tanh((ripple * surge) / (RIPPLE_LIFT_MAX * toLoose)) *
-          R *
-          RIPPLE_LIFT,
+        lift: Math.min(2.2, drive * surge) * R * RIPPLE_LIFT,
       });
       if (this.ripples.length > MAX_RIPPLES) this.ripples.shift();
     }
