@@ -329,6 +329,7 @@ class App implements ControlHost {
     if (this.pulseOn === 'kick') for (const k of kicks) this.fire(k);
     for (let b = 0; b < beats; b++) {
       this.beatFlash = 1;
+      this.director.beat();
       if (this.audio.mode === 'demo') this.listener.kick(1, now);
       if (this.pulseOn === 'beat' || this.audio.mode === 'demo') this.fire(1);
     }

@@ -102,4 +102,48 @@ describe('AI mode', () => {
     play(director, breakdown, 15, 20, 124);
     expect(sliders.get('spin')).toBeLessThan(4 / 8);
   });
+
+  it('moves to a new look every four bars with a beat', () => {
+    const { director, options } = setup();
+    play(director, groove, 10, 0, 124);
+    const looks: string[] = [];
+    let t = 10;
+    for (let bar = 0; bar < 12; bar++) {
+      for (let b = 0; b < 4; b++) {
+        director.beat();
+        play(director, groove, 60 / 124, t, 124);
+        t += 60 / 124;
+      }
+      looks.push(`${options.get('mode')}/${options.get('shape')}`);
+    }
+    // 12 bars: a change every 4 bars (3 changes), each to a different mode and shape.
+    const changes = looks.filter((l, i) => i > 0 && l !== looks[i - 1]).length;
+    expect(changes).toBe(3);
+  });
+
+  it('swings State open on each beat in a groove, and not in ambient music', () => {
+    const { director, sliders } = setup();
+    play(director, groove, 10, 0, 124);
+    const before = sliders.get('state') ?? 0;
+    director.beat();
+    play(director, groove, 0.05, 10, 124);
+    expect((sliders.get('state') ?? 0) - before).toBeGreaterThan(0.08);
+    const ambientRun = setup();
+    play(ambientRun.director, ambient, 10, 0);
+    const still = ambientRun.sliders.get('state') ?? 0;
+    ambientRun.director.beat();
+    play(ambientRun.director, ambient, 0.05, 10);
+    expect(Math.abs((ambientRun.sliders.get('state') ?? 0) - still)).toBeLessThan(0.02);
+  });
+
+  it('keeps deep Depth for a strong kick', () => {
+    const weak = setup();
+    play(weak.director, breakdown, 8, 0);
+    play(weak.director, { ...drop, kickStrength: 0.6 }, 4, 8);
+    expect(weak.sliders.get('depth')).toBeLessThan(0.75);
+    const strong = setup();
+    play(strong.director, breakdown, 8, 0);
+    play(strong.director, drop, 4, 8);
+    expect(strong.sliders.get('depth')).toBeGreaterThan(0.9);
+  });
 });

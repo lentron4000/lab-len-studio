@@ -15,11 +15,14 @@ interface Look {
   depth: number;
   spin: number;
   mforce: number;
-  mode: string;
-  shape: string;
+  /** Physics modes and shapes that suit the scene; the director moves between them. */
+  modes: readonly string[];
+  shapes: readonly string[];
   moon: string;
   /** Seconds to glide to these values. */
   glide: number;
+  /** How far State swings open on each beat (0 for none), on top of the glide. */
+  swing: number;
 }
 
 /** Kicks per second at which the music counts as having a beat. */
@@ -28,13 +31,25 @@ const BEAT_RATE = 0.9;
 const NO_BEAT_RATE = 0.4;
 /** A new scene must hold this long before it's taken (a drop is taken at once). */
 const SETTLE = 2.5;
-/** At least this long between physics-mode or shape changes, so it doesn't flicker between looks. */
-const MODE_HOLD = 14;
-const SHAPE_HOLD = 30;
+/**
+ * Looks (physics mode and shape) change every LOOK_BEATS beats (4 bars) with a beat, or at the next bar
+ * when the energy shifts by ENERGY_SHIFT of the track's norm; without a beat, on an energy shift (at
+ * least AMBIENT_MIN s apart) or every AMBIENT_EVERY s.
+ */
+const LOOK_BEATS = 16;
+const ENERGY_SHIFT = 0.25;
+const AMBIENT_MIN = 6;
+const AMBIENT_EVERY = 30;
+/** How fast a beat's State swing closes again (s), and how much harder the bar's first beat swings. */
+const SWING_TAU = 0.2;
+const ACCENT = 1.4;
+/** Kick strength over which Depth goes from its normal range into deep, and how much a groove reaches for it. */
+const STRONG_KICK: readonly [number, number] = [0.85, 1.15];
+const DEEP = 0.2;
 /** A control the performer touches is theirs for this long. */
 const HAND_BACK = 30;
 /** Slider updates per second (they glide in between). */
-const APPLY_RATE = 15;
+const APPLY_RATE = 30;
 
 /** Seconds per turn the spin aims for when a kick drives it. */
 const SPIN_SECONDS = 5;
@@ -64,7 +79,8 @@ export interface DirectorControls {
  * AI mode. Reads the music as one of five scenes and plays the controls the way a performer might:
  * drifting and loose through ambient passages, locked to the groove when the kick is in, tightening
  * and gathering through a build, pumping on the drop, letting go in the breakdown. Brightness and
- * energy shade every scene. Sliders glide; looks only change between scenes. Anything the performer
+ * energy shade every scene. Sliders glide, and with a beat State swings open on every beat; the look
+ * (physics mode and shape) moves on every four bars or when the energy shifts. Anything the performer
  * touches is theirs for a while.
  */
 export class Director {
@@ -75,8 +91,15 @@ export class Director {
   private sceneFor = 0;
   private lastBeatAt = -Infinity;
   private lastQuietAt = -Infinity;
-  private modeAt = -Infinity;
-  private shapeAt = -Infinity;
+  /** Beats since the look last changed, beats overall, and the energy and time at that change. */
+  private lookBeats = 0;
+  private beats = 0;
+  private lookEnergy = 0;
+  private lookAt = -Infinity;
+  private lookScene: Scene | null = null;
+  private swing = 0;
+  private current: Look | null = null;
+  private features: MusicFeatures | null = null;
   private sinceApply = 0;
   private readonly value: Record<SliderId, number> = { state: 0, depth: 0.5, spin: 0, mforce: 0.5 };
   private readonly chosen: Record<OptionGroup, string> = { mode: '', shape: '', moon: '' };
@@ -90,6 +113,8 @@ export class Director {
   start(current: Record<SliderId, number>): void {
     Object.assign(this.value, current);
     this.chosen.mode = this.chosen.shape = this.chosen.moon = '';
+    this.lookScene = null;
+    this.lookBeats = 0;
     this.enabled = true;
   }
 
@@ -105,18 +130,59 @@ export class Director {
     if (!this.enabled) return;
     this.readScene(f, dt, now);
     const look = this.look(f);
+    this.current = look;
+    this.features = f;
     const k = 1 - Math.exp(-dt / look.glide);
     for (const id of Object.keys(this.value) as SliderId[]) this.value[id] += (look[id] - this.value[id]) * k;
+    this.swing *= Math.exp(-dt / SWING_TAU);
     this.sinceApply += dt;
     if (this.sinceApply >= 1 / APPLY_RATE) {
       this.sinceApply = 0;
       for (const id of Object.keys(this.value) as SliderId[]) {
-        if (this.free(id)) this.controls.setSlider(id, this.value[id]);
+        const v = id === 'state' ? Math.min(1, this.value.state + this.swing) : this.value[id];
+        if (this.free(id)) this.controls.setSlider(id, v);
       }
     }
-    this.choose('moon', look.moon, 0);
-    this.choose('mode', look.mode, MODE_HOLD);
-    this.choose('shape', look.shape, SHAPE_HOLD);
+    this.choose('moon', look.moon);
+    // A new scene that doesn't suit the current look changes it at once; ambient music changes on its own clock.
+    const suits = look.modes.includes(this.chosen.mode) && look.shapes.includes(this.chosen.shape);
+    const beat = f.kickRate >= BEAT_RATE;
+    if (this.lookScene !== this.scene && !suits) this.changeLook();
+    else if (!beat && now - this.lookAt > AMBIENT_EVERY) this.changeLook();
+    else if (!beat && now - this.lookAt > AMBIENT_MIN && this.energyShifted()) this.changeLook();
+  }
+
+  /** A beat from the transport: State swings with it, and every four bars (or on an energy shift) the look moves on. */
+  beat(): void {
+    if (!this.enabled || !this.current) return;
+    this.beats++;
+    this.lookBeats++;
+    const accent = this.beats % 4 === 1;
+    this.swing = Math.max(this.swing, this.current.swing * (accent ? ACCENT : 1));
+    const bar = this.lookBeats % 4 === 0;
+    if (this.lookBeats >= LOOK_BEATS || (bar && this.lookBeats >= 4 && this.energyShifted()))
+      this.changeLook();
+  }
+
+  private energyShifted(): boolean {
+    const f = this.features;
+    return !!f && Math.abs(f.energy - this.lookEnergy) > ENERGY_SHIFT * Math.max(0.2, f.baseline);
+  }
+
+  /** Moves to another physics mode and shape that suit the scene (never the same pair twice running). */
+  private changeLook(): void {
+    const look = this.current;
+    if (!look) return;
+    const pick = (options: readonly string[], now: string): string => {
+      const others = options.filter((o) => o !== now);
+      return others.length ? others[Math.floor(Math.random() * others.length)] : options[0];
+    };
+    this.choose('mode', pick(look.modes, this.chosen.mode));
+    this.choose('shape', pick(look.shapes, this.chosen.shape));
+    this.lookBeats = 0;
+    this.lookAt = this.now;
+    this.lookScene = this.scene;
+    this.lookEnergy = this.features?.energy ?? 0;
   }
 
   private readScene(f: MusicFeatures, dt: number, now: number): void {
@@ -155,6 +221,11 @@ export class Director {
     // Spin to the tempo: with the kick driving, about one turn every SPIN_SECONDS; without it, slower
     // divisions of that same speed so it stays in time.
     const kickSpin = spinIndex(this.bpm);
+    // Depth's deep end (past 0.75 on the slider) is kept for a strong, present kick.
+    const strongKick =
+      f.kickRate >= BEAT_RATE
+        ? Math.min(1, Math.max(0, (f.kickStrength - STRONG_KICK[0]) / (STRONG_KICK[1] - STRONG_KICK[0])))
+        : 0;
     const spin = (slower: number): number => Math.max(1, kickSpin - slower) / 8;
     const bright = f.brightness;
     const through = Math.min(1, this.sceneFor / 16); // how far into the scene (builds ramp with it)
@@ -166,45 +237,51 @@ export class Director {
           depth: 0.25,
           spin: spin(3),
           mforce: 0.3 + 0.4 * bright,
-          mode: 'water',
-          shape: 'globe',
+          modes: ['water', 'gas'],
+          shapes: ['globe', 'disc'],
           moon: 'on',
           glide: 4,
+          swing: 0,
         };
       case 'groove':
         return {
           state: 0.05 + 0.3 * e + 0.2 * ambience,
-          depth: 0.45 + 0.2 * Math.min(1, f.kickStrength),
+          depth: 0.45 + 0.2 * Math.min(1, f.kickStrength) + DEEP * strongKick,
           spin: spin(0),
           mforce: 0.5,
-          mode: bright > 0.55 ? 'gas' : 'water',
-          shape: 'disc',
+          // Anything goes in a groove; brighter music leans to the more agitated modes.
+          modes: bright > 0.55 ? ['gas', 'repel', 'attract', 'water'] : ['water', 'attract', 'gas', 'repel'],
+          shapes: ['disc', 'globe'],
           moon: 'on',
           glide: 2,
+          swing: 0.18 * (0.5 + 0.5 * e),
         };
       case 'build':
         // Gathering: tightening, deepening and spinning faster the longer it builds.
         return {
           state: 0.35 * (1 - through) + 0.05,
-          depth: 0.5 + 0.3 * through,
+          depth: 0.4 + 0.25 * through,
           spin: spin(through < 0.5 ? 2 : through < 0.9 ? 1 : 0),
           mforce: 0.6 + 0.3 * through,
-          mode: 'attract',
-          shape: 'disc',
+          modes: ['attract', 'water'],
+          shapes: ['disc', 'globe'],
           moon: 'on',
           glide: 1.5,
+          swing: 0.15 * through,
         };
       case 'drop':
         // Tight, deep and pumping on every kick.
         return {
           state: 0,
-          depth: 0.95,
+          // Deep only when the kick behind it is strong.
+          depth: 0.6 + (0.95 - 0.6) * strongKick,
           spin: spin(0),
           mforce: 0.5,
-          mode: 'gas',
-          shape: 'disc',
+          modes: ['gas', 'repel'],
+          shapes: ['disc', 'globe'],
           moon: 'on',
           glide: 0.3,
+          swing: 0.3,
         };
       case 'breakdown':
         return {
@@ -212,22 +289,18 @@ export class Director {
           depth: 0.25,
           spin: spin(2),
           mforce: 0.4,
-          mode: 'water',
-          shape: 'disc',
+          modes: ['water', 'gas'],
+          shapes: ['disc', 'globe'],
           moon: 'off',
           glide: 3,
+          swing: 0,
         };
     }
   }
 
-  private choose(group: OptionGroup, id: string, hold: number): void {
+  private choose(group: OptionGroup, id: string): void {
     if (this.chosen[group] === id || !this.free(group)) return;
-    const at = group === 'mode' ? this.modeAt : group === 'shape' ? this.shapeAt : -Infinity;
-    // Looks change only between scenes' early moments (or on the drop), and not too often.
-    if (this.chosen[group] && this.now - at < hold && this.scene !== 'drop') return;
     this.chosen[group] = id;
-    if (group === 'mode') this.modeAt = this.now;
-    if (group === 'shape') this.shapeAt = this.now;
     this.controls.setOption(group, id);
   }
 
