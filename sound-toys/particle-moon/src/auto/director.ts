@@ -45,8 +45,8 @@ const LOOK_BARS: readonly [number, number] = [12, 32];
 const SHIFT_MIN_BARS = 4;
 /** Panning: a new spot every PAN_BARS, at most PAN_X / PAN_Y of the screen from centre. */
 const PAN_BARS = 32;
-const PAN_X = 0.12;
-const PAN_Y = 0.08;
+const PAN_X = 0.04;
+const PAN_Y = 0.03;
 const ENERGY_SHIFT = 0.25;
 const AMBIENT_MIN = 6;
 const AMBIENT_EVERY = 30;

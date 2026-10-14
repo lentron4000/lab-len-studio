@@ -174,8 +174,8 @@ describe('AI mode', () => {
     const { director, pans } = setup();
     play(director, groove, 240, 0, 124);
     const xs = pans.map(([x]) => x);
-    expect(Math.max(...xs.map(Math.abs))).toBeLessThanOrEqual(0.12);
-    expect(Math.max(...xs) - Math.min(...xs)).toBeGreaterThan(0.02);
+    expect(Math.max(...xs.map(Math.abs))).toBeLessThanOrEqual(0.04);
+    expect(Math.max(...xs) - Math.min(...xs)).toBeGreaterThan(0.005);
     // Slow: never more than a sliver of the screen between frames.
     for (let i = 1; i < pans.length; i++) expect(Math.abs(pans[i][0] - pans[i - 1][0])).toBeLessThan(0.002);
   });

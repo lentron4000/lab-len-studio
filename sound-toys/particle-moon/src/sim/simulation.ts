@@ -22,6 +22,13 @@ export interface Viewport {
 /** Physics constants are tuned at this shape radius and scaled with the real one. */
 const REFERENCE_RADIUS = 230;
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
+/**
+ * The disc's rim: its outermost particles sit evenly on the circle itself, this close together (a share
+ * of the particle spacing), so their overlapping dots draw a smooth edge rather than a scalloped one.
+ * The phyllotaxis inside stops this many spacings short of it.
+ */
+const RIM_SPACING = 0.5;
+const RIM_INSET = 0.2;
 /** Speed (px/step at the reference radius) above the resting motion where particles start to glow… */
 const EXCITE_CALM = 0.6;
 /** …and the speed above that where they're fully lit. */
@@ -100,10 +107,11 @@ const SILENT_Z_DAMPING = 0.8;
 /**
  * Keeps the shape as a whole on its centre: a spring and damper (per step) on the centroid of the
  * particles still in the shape. Local dents and stirs are untouched, but a loose cloud no longer slides
- * bodily after the moon's bow wave (it sloshed ±17% of the radius each orbit). Off for held formations.
+ * bodily after the moon, kicks or spin (the moon alone sloshed it ±17% of the radius each orbit; now a few
+ * percent). Off for held formations.
  */
-const CENTRE_SPRING = 0.006;
-const CENTRE_DAMPING = 0.12;
+const CENTRE_SPRING = 0.04;
+const CENTRE_DAMPING = 0.35;
 /** Water: seconds for a kick's ripple to cross the shape, at Tight and at Loose; and rings alive at once. */
 const RIPPLE_SECONDS: readonly [number, number] = [0.45, 0.8];
 const MAX_RIPPLES = 6;
@@ -320,12 +328,24 @@ export class Simulation {
     this.relX = f();
     this.relY = f();
     this.next = new Int32Array(count);
+    // Disc: a phyllotaxis (even density, no rings) inside a ring of particles on the edge. The last
+    // indices make the ring (on the globe they are the bottom cap), each in the order of its spiral
+    // angle so the morph between shapes moves them as little as possible.
+    const rimCount = Math.min(count, Math.round((2 * Math.PI) / (RIM_SPACING * Math.sqrt(Math.PI / count))));
+    const inner = count - rimCount;
+    const reach = inner > 0 ? 1 / (1 + RIM_INSET * Math.sqrt(Math.PI / inner)) : 0;
+    const rimOrder = Array.from({ length: rimCount }, (_, j) => inner + j).sort(
+      (p, q) => ((p * GOLDEN_ANGLE) % (2 * Math.PI)) - ((q * GOLDEN_ANGLE) % (2 * Math.PI)),
+    );
+    const rimAngle = new Float32Array(rimCount);
+    rimOrder.forEach((i, slot) => (rimAngle[i - inner] = (slot / rimCount) * 2 * Math.PI));
     for (let i = 0; i < count; i++) {
-      // Phyllotaxis disc: even density with no rings.
-      const r = Math.sqrt((i + 0.5) / count);
       const a = i * GOLDEN_ANGLE;
-      this.discX[i] = r * Math.cos(a);
-      this.discY[i] = r * Math.sin(a);
+      // (Offset by a fifth of a step so the spiral's first dots close over the very centre.)
+      const r = i < inner ? reach * Math.sqrt((i + 0.2) / (inner - 0.8)) : 1;
+      const da = i < inner ? a : rimAngle[i - inner];
+      this.discX[i] = r * Math.cos(da);
+      this.discY[i] = r * Math.sin(da);
       // Fibonacci sphere.
       const sy = 1 - (2 * (i + 0.5)) / count;
       const sr = Math.sqrt(1 - sy * sy);

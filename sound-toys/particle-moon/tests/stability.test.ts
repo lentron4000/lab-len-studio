@@ -51,5 +51,5 @@ it('a loose gas cloud stays centred while the moon orbits it', () => {
     worst = Math.max(worst, Math.abs(mx / sim.count - 720));
   }
   // Before the centring spring, the moon's bow wave carried the whole cloud ±20% of the radius.
-  expect(worst / 300).toBeLessThan(0.07);
+  expect(worst / 300).toBeLessThan(0.04);
 });
