@@ -36,17 +36,6 @@ const HUDDLE_BUZZ = 0.45;
 /** At full drift an evaporating particle is drawn this much smaller and fainter. */
 const VAPOR_SHRINK = 0.8;
 const VAPOR_FAINT = 0.85;
-/**
- * Day, silent and still: the packed Disc is drawn as one clean circle (its rim of dots would scallop
- * the edge). Sound above CALM_SOUND, State past CALM_STATE, or particles straying from their resting
- * radius by more than CALM_STRAY px on average hand it back to the dots. The edge sits CALM_RIM of a
- * dot radius beyond the outermost homes.
- */
-const CALM_SOUND = 0.08;
-const CALM_STATE = 0.2;
-const CALM_STRAY = 0.6;
-const CALM_RIM = 0.7;
-const CALM_EASE = 0.12;
 /** Chance per frame that a hot ritual particle sheds an ember, and the excitation it takes. */
 const EMBER_RATE = 0.03;
 const EMBER_HEAT = 0.65;
@@ -89,8 +78,6 @@ export class Renderer {
   private readonly velX: Float32Array;
   private readonly velY: Float32Array;
   private streakFrames = 0;
-  /** Day: how far the silent Disc has settled into one clean circle (0–1). */
-  private calm = 0;
   /** Day: streaking particles in a band, stroked after the dots. */
   private readonly streakI: Int32Array;
   private readonly streakX: Float32Array;
@@ -218,7 +205,6 @@ export class Renderer {
       (this.streakFrames > 2 ? 1 : 0);
     const streakMax = R * STREAK_MAX;
     this.streakFrames++;
-    let stray = 0;
     for (let b = 0; b < BANDS * 2; b++) {
       if (b === BANDS && moon.visible) this.drawMoon(camera);
       const idx = this.bands[b];
@@ -279,7 +265,6 @@ export class Renderer {
           const qy = cy + (y[i] - cy) * ps;
           this.tracers.record(i, qx, qy);
           this.track(i, qx, qy);
-          stray += Math.abs(Math.hypot(qx - cx, qy - cy) - re * Math.sqrt((i + 0.5) / N));
           const px = qx + (Math.random() - 0.5) * 2 * jitter * (1 + HUDDLE_BUZZ * huddle[i]);
           const py = qy + (Math.random() - 0.5) * 2 * jitter * (1 + HUDDLE_BUZZ * huddle[i]);
           if (
@@ -336,7 +321,6 @@ export class Renderer {
         ctx.globalAlpha = 1;
       }
     }
-    if (!glow) this.drawCalm(stray / N, re + dot * CALM_RIM, dot);
     if (ritual) {
       ctx.globalAlpha = 1;
       this.embers.draw(ctx, Math.max(1.2, R / 220));
@@ -344,32 +328,6 @@ export class Renderer {
     ctx.restore();
     this.tracers.endFrame();
     return dot;
-  }
-
-  /**
-   * Day: crossfades the silent, still Disc into a clean circle: ink fills the notches between the rim
-   * dots and paper trims the dots that poke past the edge.
-   */
-  private drawCalm(stray: number, edge: number, dot: number): void {
-    const { ctx, sim } = this;
-    const quiet = 1 - Math.min(1, sim.sound / CALM_SOUND);
-    const packed = 1 - Math.min(1, sim.state / CALM_STATE);
-    const still = 1 - Math.min(1, stray / CALM_STRAY);
-    const target = quiet * packed * still * (1 - sim.globe) * (sim.moon.visible ? 0 : 1);
-    this.calm += (target - this.calm) * CALM_EASE;
-    if (this.calm < 0.01) return;
-    const { cx, cy } = sim.viewport;
-    ctx.globalAlpha = this.calm;
-    ctx.fillStyle = DAY_PAPER;
-    ctx.beginPath();
-    ctx.arc(cx, cy, edge + dot * 2, 0, Math.PI * 2);
-    ctx.arc(cx, cy, edge, 0, Math.PI * 2, true);
-    ctx.fill();
-    ctx.fillStyle = DAY_INK;
-    ctx.beginPath();
-    ctx.arc(cx, cy, edge, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.globalAlpha = 1;
   }
 
   /** Records particle i's screen position and updates its smoothed screen velocity (px/frame). */

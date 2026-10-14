@@ -4,7 +4,7 @@
  */
 
 /* Layout: the shape fills the screen; one floating control panel at the bottom.
-   Day is white on black; night (data-night on <html>) follows the canvas into a dusk palette, and
+   Day is ink on white; night (data-night on <html>) follows the canvas into a dusk palette, and
    ritual (data-ritual as well) into black. */
 *,
 *::before,
@@ -18,15 +18,15 @@ body {
   display: none !important;
 }
 :root {
-  --paper: #000000;
-  --ink: #f2f2f0;
-  --muted: #8e9096;
-  --line: #2a2b2e;
-  --panel: rgba(0, 0, 0, 0.82);
-  --focus: #8fb0ff;
+  --paper: #ffffff;
+  --ink: #111214;
+  --muted: #6c7078;
+  --line: #e2e3e6;
+  --panel: rgba(255, 255, 255, 0.86);
+  --focus: #2f5fd0;
   --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --sans: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  color-scheme: dark;
+  color-scheme: light;
 }
 /* Night: the page follows the canvas into the dark */
 :root[data-night] {
@@ -134,7 +134,7 @@ canvas#c {
 }
 /* Len Studio mark: black by day, the studio's own green at night, centred on the header line */
 .brand {
-  --brand: #ffffff;
+  --brand: #000000;
   display: block;
   height: 15px;
   color: var(--brand);
