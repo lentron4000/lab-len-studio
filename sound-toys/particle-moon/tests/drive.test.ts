@@ -10,32 +10,59 @@ function spread(sim: Simulation): number {
 }
 
 /** Spread at rest, and its peak over 1.5 s after one hit. */
-function hit(strength: number, depth: number): { rest: number; peak: number } {
+function hit(
+  strength: number,
+  depth: number,
+  mode: keyof typeof PHYSICS_MODES = 'gas',
+): { rest: number; peak: number; core: number } {
   const sim = new Simulation(1500);
-  sim.mode = PHYSICS_MODES.gas;
+  sim.mode = PHYSICS_MODES[mode];
   sim.moon.enabled = false;
   sim.depth = depth;
   sim.setViewport({ width: 1440, height: 900, radius: 300, cx: 720, cy: 450 }, true);
   for (let i = 0; i < 200; i++) sim.step();
+  const inCore = (): number => {
+    let n = 0;
+    for (let j = 0; j < sim.count; j++) if (Math.hypot(sim.x[j] - 720, sim.y[j] - 450) < 300 * 0.35) n++;
+    return n;
+  };
   const rest = spread(sim);
+  const core0 = inCore();
   sim.fire(strength);
   let peak = 0;
+  let core = 1;
   for (let i = 0; i < 90; i++) {
     sim.step();
-    peak = Math.max(peak, spread(sim));
+    const s = spread(sim);
+    if (s > peak) {
+      peak = s;
+      core = inCore() / core0;
+    }
   }
-  return { rest, peak };
+  return { rest, peak, core };
 }
 
 /** Peak spread over 1.5 s after one hit. */
-const spreadAfter = (strength: number, depth: number): number => hit(strength, depth).peak;
+const spreadAfter = (strength: number, depth: number, mode: keyof typeof PHYSICS_MODES = 'gas'): number =>
+  hit(strength, depth, mode).peak;
 
 describe('drive', () => {
-  it('a kick at full Depth vaporizes like the hardest pad at the default Depth', () => {
-    const pad = spreadAfter(BLAST_MAX, 0.65);
-    const depth = spreadAfter(1, DEPTH_MAX);
-    expect(pad).toBeGreaterThan(1.4);
-    expect(Math.abs(depth - pad) / pad).toBeLessThan(0.12);
+  it('a kick at full Depth hits like the hardest pad at the default Depth', () => {
+    for (const mode of ['gas', 'repel'] as const) {
+      const pad = spreadAfter(BLAST_MAX, 0.65, mode);
+      const depth = spreadAfter(1, DEPTH_MAX, mode);
+      expect(Math.abs(depth - pad) / pad, mode).toBeLessThan(0.12);
+    }
+    // The poles still blast apart.
+    expect(spreadAfter(BLAST_MAX, 0.65, 'repel')).toBeGreaterThan(1.4);
+  });
+
+  it('gas breathes at full Depth: a modest swell around a core that stays, not a ring', () => {
+    const { rest, peak, core } = hit(1, DEPTH_MAX);
+    expect(peak - rest).toBeGreaterThan(0.05);
+    // Before, it flew out to a ring (mean spread ~1.5 radii) with the middle emptied.
+    expect(peak).toBeLessThan(1);
+    expect(core).toBeGreaterThan(0.6);
   });
 
   it('steady kicks at full Depth keep the shape on screen (blasts recharge between hits)', () => {

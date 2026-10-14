@@ -175,6 +175,20 @@ const PUMP_SPRING = 2;
 const PUMP_DECAY = 0.86;
 /** Share of the per-hit evaporation a full pump holds back, so most of the gas comes back on the beat. */
 const PUMP_VAPOR_CUT = 0.7;
+/**
+ * Gas breathes instead: a kick swells it from the middle out. Homes move out by up to GAS_BREATH radii
+ * at the rim, falling off toward the centre (as distance^GAS_BREATH_CURVE), so a dense core stays and
+ * the cloud thins outward; the shockwave follows the same curve, and a blast pushes only
+ * GAS_BLAST_PUSH× harder (not BLAST_PUSH×), so even full Deep stays a breath, not a burst.
+ */
+const GAS_BREATH = 0.2;
+const GAS_BREATH_CURVE = 3;
+const GAS_BLAST_PUSH = 1;
+/** Gas's shockwave strength against the other modes' (it swells; it isn't thrown). */
+const GAS_SHOCK = 0.4;
+/** How far a kick opens gas toward the cloud end, and how much of the home pull a blast lets go, against the other modes. */
+const GAS_OPEN = 0.3;
+const GAS_RELEASE = 0.25;
 /** Strongest pad hit: three times a full kick. */
 export const BLAST_MAX = 3;
 /** Hit × Depth at which the vapor blast is complete: the hardest pad at the default Depth. */
@@ -469,14 +483,16 @@ export class Simulation {
     const blast = this.blast * (1 - mode.ripple);
     // A rippling mode doesn't open all at once on a kick; the ripple carries the kick instead.
     // The kick opens the shape over a few frames (attack), then lets go at the usual rate.
-    const openTarget = Math.min(1, this.pulse * this.depth * (1 - mode.ripple) + blast);
+    const openTarget =
+      Math.min(1, this.pulse * this.depth * (1 - mode.ripple) + blast) * lerp(1, GAS_OPEN, mode.vapor);
     this.open += (openTarget - this.open) * (openTarget > this.open ? KICK_ATTACK : 1);
     this.state = slider + (1 - slider) * this.open;
     const e = this.state;
     // In the blast range the shockwave grows much faster than the drive: that's what vaporizes.
     // `drive` and `shock` are this step's new hit (zero otherwise); its push is spread over KICK_STEPS.
     const drive = this.pendingShock * this.depth;
-    const shock = drive * lerp(1, BLAST_PUSH, blast) * (R / 220) * 2.4;
+    const blastPush = lerp(BLAST_PUSH, GAS_BLAST_PUSH, mode.vapor);
+    const shock = drive * lerp(1, blastPush, blast) * (R / 220) * 2.4;
     if (this.pendingShock) {
       this.kickLeft = KICK_STEPS;
       this.kickStrength = this.pendingShock;
@@ -485,7 +501,7 @@ export class Simulation {
     const kickDrive = this.kickLeft ? this.kickStrength * this.depth : 0;
     const shockGlow = Math.min(1, this.kickStrength * 0.35 + kickDrive * 0.5);
     const kickShock = this.kickLeft
-      ? (kickDrive * lerp(1, BLAST_PUSH, blast) * (R / 220) * 2.4) / KICK_STEPS
+      ? (kickDrive * lerp(1, blastPush, blast) * (R / 220) * 2.4) / KICK_STEPS
       : 0;
     if (this.kickLeft) this.kickLeft--;
     if (shock && mode.ripple) {
@@ -500,7 +516,7 @@ export class Simulation {
       });
       if (this.ripples.length > MAX_RIPPLES) this.ripples.shift();
     }
-    const instantShock = kickShock * (1 - mode.ripple);
+    const instantShock = kickShock * (1 - mode.ripple) * lerp(1, GAS_SHOCK, mode.vapor);
 
     // A held formation takes over from the mode: a stiff spring to its target, calm damping, and no
     // thermostat, wall or spin to fight it. `fw` eases in so the swarm accelerates into place.
@@ -523,11 +539,12 @@ export class Simulation {
         summoning.strength,
         fw,
       ) *
-      (1 - BLAST_RELEASE * blast * (1 - 0.7 * deep)) *
+      (1 - BLAST_RELEASE * lerp(1, GAS_RELEASE, mode.vapor) * blast * (1 - 0.7 * deep)) *
       // …and the hold home stiffens, both carrying particles out to the hollowed shape and snapping them back.
       (1 + PUMP_SPRING * deep * Math.min(1, this.open * 3));
     // Deep: a kick pushes every home outward by about the same distance, so the middle empties (a ring).
-    const hollow = PUMP_HOLLOW * deep * this.open;
+    const hollow = PUMP_HOLLOW * deep * this.open * (1 - mode.vapor);
+    const breath = GAS_BREATH * mode.vapor * Math.min(1, this.open);
     const containK = mode.contain * e * (1 - fw) * (1 - blast);
     const re = this.effectiveRadius();
     // Ripples cross the shape in RIPPLE_SECONDS: quicker when tight, slower when loose.
@@ -769,6 +786,17 @@ export class Simulation {
       let hx = cx + dhx + (shx - dhx) * gw + sdx * scatter;
       let hy = cy + dhy + (shy - dhy) * gw + sdy * scatter;
       let hz = shz * gw + this.scatterZ[i] * scatter * gw;
+      if (breath) {
+        // Gas: out along the home's own direction, more the further out it sits (a dense core stays).
+        const ux = this.discX[i] + (this.sphereX[i] - this.discX[i]) * gw;
+        const uy = this.discY[i] + (this.sphereY[i] - this.discY[i]) * gw;
+        const uz = this.sphereZ[i] * gw;
+        const ul = Math.hypot(ux, uy, uz) || 1;
+        const push = breath * re * Math.min(1, ul) ** GAS_BREATH_CURVE;
+        hx += (ux / ul) * push;
+        hy += (uy / ul) * push;
+        hz += (uz / ul) * push;
+      }
       if (hollow) {
         // Out along the home's own direction from the centre (its disc / sphere point, so even the middle has one).
         const ux = this.discX[i] + (this.sphereX[i] - this.discX[i]) * gw;
@@ -845,7 +873,11 @@ export class Simulation {
       }
       if (instantShock) {
         const od = Math.hypot(ox, oy, oz) || 1;
-        const rim = 0.3 + 0.7 * Math.min(1, od / re);
+        const rim = lerp(
+          0.3 + 0.7 * Math.min(1, od / re),
+          Math.min(1, od / re) ** GAS_BREATH_CURVE,
+          mode.vapor,
+        );
         const f = (instantShock * rim) / od;
         vx[i] += ox * f;
         vy[i] += oy * f;
