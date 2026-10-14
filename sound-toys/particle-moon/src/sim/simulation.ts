@@ -110,15 +110,6 @@ const SILENT_Z_DAMPING = 0.8;
  * bodily after the moon, kicks or spin (the moon alone sloshed it ±17% of the radius each orbit; now a few
  * percent). Off for held formations.
  */
-/**
- * The screen (for projection): flung particles meet a thickening drag on their way out, measured on a
- * circle round the shape's centre (0 there, 1 at the nearest screen edge less EDGE_MARGIN px), so the
- * shape stays round however hard it's hit.
- * Outward motion fades from REACH_FROM to nothing by the edge, so a blast spends itself and lands softly
- * at whatever depth its speed carries it; the way home is untouched.
- */
-const REACH_FROM = 0.7;
-const EDGE_MARGIN = 12;
 const CENTRE_SPRING = 0.04;
 const CENTRE_DAMPING = 0.35;
 /** Water: seconds for a kick's ripple to cross the shape, at Tight and at Loose; and rings alive at once. */
@@ -718,7 +709,6 @@ export class Simulation {
     if (e > 0.02) this.interact(re, e, scale, gw, W, H);
 
     let ke = 0;
-    const reach = Math.max(R, Math.min(cx, W - cx, cy, H - cy) - EDGE_MARGIN);
     const centring = 1 - fw;
     const centreAx = -(CENTRE_SPRING * this.driftX + CENTRE_DAMPING * this.driftVx) * centring;
     const centreAy = -(CENTRE_SPRING * this.driftY + CENTRE_DAMPING * this.driftVy) * centring;
@@ -1158,30 +1148,6 @@ export class Simulation {
       let nvx = (vx[i] + ax) * drag;
       let nvy = (vy[i] + ay) * drag;
       let nvz = (vz[i] + az) * drag * zDamp;
-      {
-        // Toward the screen's edge: drag on outward motion only (as seen on screen, so motion toward the
-        // camera counts too), rising steeply near the edge.
-        const ps = camera / (camera - z[i]);
-        const ox = x[i] - cx;
-        const oy = y[i] - cy;
-        const ex = (ox * ps) / reach;
-        const ey = (oy * ps) / reach;
-        const rho = Math.hypot(ex, ey);
-        if (rho > REACH_FROM) {
-          // Gradient of rho over the particle's 3D position: the direction that carries it outward on screen.
-          const gx = (ex / rho / reach) * ps;
-          const gy = (ey / rho / reach) * ps;
-          const gz = ((ex / rho / reach) * ox + (ey / rho / reach) * oy) * ((ps * ps) / camera);
-          const out = nvx * gx + nvy * gy + nvz * gz;
-          if (out > 0) {
-            const t = Math.min(1, (rho - REACH_FROM) / (1 - REACH_FROM));
-            const cut = (out * (1 - (1 - t) ** 3)) / (gx * gx + gy * gy + gz * gz);
-            nvx -= cut * gx;
-            nvy -= cut * gy;
-            nvz -= cut * gz;
-          }
-        }
-      }
       const sp2 = nvx * nvx + nvy * nvy + nvz * nvz;
       if (sp2 > vmax * vmax) {
         const f = vmax / Math.sqrt(sp2);
