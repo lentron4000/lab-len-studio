@@ -8,6 +8,11 @@ export const DAY_INK = '#111214';
 export const DAY_PAPER = '#ffffff';
 export const DAY_BANDS = ['#c9cbcf', '#a2a5ab', '#64676d', DAY_INK] as const;
 
+/** Night: day inverted, white on black. Depth bands back to front, so the far side fades into the dark. */
+export const DARK_INK = '#ffffff';
+export const DARK_PAPER = '#000000';
+export const DARK_BANDS = ['#3a3b3e', '#5f6166', '#a3a5aa', DARK_INK] as const;
+
 /** Night: neon, mostly pinks and purples with a little cyan for contrast (last entry). */
 export const NEON: readonly Rgb[] = [
   [255, 46, 151],

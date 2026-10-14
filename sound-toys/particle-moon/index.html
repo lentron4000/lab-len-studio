@@ -22,8 +22,16 @@
           new URLSearchParams(location.search).get('m') || (fallback.charAt(0) === '%' ? '' : fallback)
         ).toLowerCase();
         var root = document.documentElement;
+        // A mode that can switch looks opens on the last one chosen.
+        if (m !== 'night' && m !== 'ritual') {
+          try {
+            var saved = localStorage.getItem('sound-toy:night');
+            m = saved === '1' ? 'night' : saved || m;
+          } catch (e) {}
+        }
         if (m === 'night' || m === 'ritual') root.setAttribute('data-night', '');
         if (m === 'ritual') root.setAttribute('data-ritual', '');
+        if (m === 'dark') root.setAttribute('data-dark', '');
       })();
     </script>
     <style>
@@ -32,6 +40,9 @@
       html.preload body {
         margin: 0;
         background: #ffffff;
+      }
+      html.preload[data-dark] body {
+        background: #000000;
       }
       html.preload[data-night] body {
         background: #150e27;
@@ -138,14 +149,17 @@
           </fieldset>
         </div>
         <div class="row" id="look-row">
-          <div class="label">Mode</div>
+          <div class="label">Look</div>
           <fieldset>
-            <legend>Day, night or ritual</legend>
-            <div class="modes" role="radiogroup" aria-label="Day, night or ritual">
+            <legend>Look</legend>
+            <div class="modes" role="radiogroup" aria-label="Look">
               <label
                 ><input type="radio" name="night" id="night-off" value="day" checked /><span>Day</span></label
               >
-              <label><input type="radio" name="night" id="night-on" value="night" /><span>Night</span></label>
+              <label
+                ><input type="radio" name="night" id="night-dark" value="dark" /><span>Night</span></label
+              >
+              <label><input type="radio" name="night" id="night-on" value="night" /><span>Party</span></label>
               <label
                 ><input type="radio" name="night" id="night-ritual" value="ritual" /><span
                   >Ritual</span

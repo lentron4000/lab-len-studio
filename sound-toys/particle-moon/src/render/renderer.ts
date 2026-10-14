@@ -10,6 +10,9 @@ import {
   createGlowSprites,
   createHeatSprites,
   css,
+  DARK_BANDS,
+  DARK_INK,
+  DARK_PAPER,
   DAY_BANDS,
   DAY_INK,
   DAY_PAPER,
@@ -50,7 +53,8 @@ const EMBER_RATE = 0.03;
 const EMBER_HEAT = 0.65;
 
 /** Day: ink on paper. Night: neon over a dusk sky. Ritual: blood and ember on black, with a blood moon. */
-export type Look = 'day' | 'night' | 'ritual';
+/** Day (ink on white), dark (Night: day inverted), night (Party: neon on dusk) and ritual. */
+export type Look = 'day' | 'dark' | 'night' | 'ritual';
 
 /**
  * Canvas 2D renderer. Particles are sorted into four depth bands and split again at the moon's depth,
@@ -160,7 +164,12 @@ export class Renderer {
    */
   draw(blend = 1, frameSteps = 1): number {
     const { ctx, sim, look } = this;
-    const glow = look !== 'day';
+    const glow = look === 'night' || look === 'ritual';
+    // Day and Night (dark) draw flat dots in ink on paper; Night is day inverted.
+    const dark = look === 'dark';
+    const ink = dark ? DARK_INK : DAY_INK;
+    const paper = dark ? DARK_PAPER : DAY_PAPER;
+    const bands = dark ? DARK_BANDS : DAY_BANDS;
     const ritual = look === 'ritual';
     const { count: N, moon, vaporFade: fade, huddle } = sim;
     this.blend = blend;
@@ -174,7 +183,7 @@ export class Renderer {
     const { radius: R, cx, cy } = sim.viewport;
     const sprites = this.sprites[ritual ? 'ritual' : 'night'];
 
-    ctx.fillStyle = ritual ? RITUAL_BLACK : glow ? this.duskGradient() : DAY_PAPER;
+    ctx.fillStyle = ritual ? RITUAL_BLACK : glow ? this.duskGradient() : paper;
     ctx.fillRect(0, 0, this.width, this.height);
 
     const re = sim.effectiveRadius();
@@ -207,7 +216,7 @@ export class Renderer {
       colourOf: ritual ? this.heatOf : this.colourOf,
       strokes: this.strokes[ritual ? 'ritual' : 'night'],
       motion: ritual ? sim.excite : undefined,
-      dayInk: DAY_INK,
+      dayInk: ink,
     });
 
     // Night glow. Base brightness is normalised by how much the sprites overlap (coverage), so a packed
@@ -287,7 +296,7 @@ export class Renderer {
           if (ritual && f > EMBER_HEAT && Math.random() < emberRate * f) this.embers.spawn(px, py, f, R);
         }
       } else {
-        ctx.fillStyle = DAY_BANDS[b % BANDS];
+        ctx.fillStyle = bands[b % BANDS];
         ctx.beginPath();
         let fading = 0;
         let streaking = 0;
@@ -325,7 +334,7 @@ export class Renderer {
         ctx.fill();
         if (streaking) {
           // Each streaking particle as a round-ended line back along its motion: the particle is its trail.
-          ctx.strokeStyle = DAY_BANDS[b % BANDS];
+          ctx.strokeStyle = bands[b % BANDS];
           ctx.lineWidth = dot * 2;
           ctx.lineCap = 'round';
           ctx.beginPath();
@@ -454,7 +463,7 @@ export class Renderer {
       ctx.fill();
     }
     ctx.globalCompositeOperation = 'source-over';
-    ctx.fillStyle = this.look === 'night' ? '#ffffff' : DAY_INK;
+    ctx.fillStyle = this.look === 'night' ? '#ffffff' : this.look === 'dark' ? DARK_INK : DAY_INK;
     ctx.beginPath();
     ctx.arc(mx, my, mr, 0, Math.PI * 2);
     ctx.fill();

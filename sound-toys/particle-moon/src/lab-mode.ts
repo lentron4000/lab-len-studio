@@ -5,7 +5,7 @@ import type { Look } from './render/renderer';
 /**
  * Modes, chosen by the `m` URL parameter (`?m=ritual`). Each locks the toy to one look and decides
  * what it offers; `len` is the master mode with everything unlocked, for demos. No parameter, or
- * one this build doesn't know, gives the plain day toy.
+ * one this build doesn't know, gives the plain toy (it opens on Day and can switch looks).
  */
 export interface LabMode {
   name: string;
@@ -16,7 +16,7 @@ export interface LabMode {
 }
 
 export const MODES: Record<string, LabMode> = {
-  day: { name: 'day', look: 'day', formations: false },
+  day: { name: 'day', look: null, formations: false },
   night: { name: 'night', look: 'night', formations: false },
   ritual: { name: 'ritual', look: 'ritual', formations: true },
   len: { name: 'len', look: null, formations: true },

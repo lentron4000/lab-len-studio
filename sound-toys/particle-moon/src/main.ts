@@ -29,13 +29,18 @@ const wait = (ms: number): Promise<void> =>
     setTimeout(resolve, ms);
   });
 
-const LOOK_RADIO: Record<Look, string> = { day: 'night-off', night: 'night-on', ritual: 'night-ritual' };
+const LOOK_RADIO: Record<Look, string> = {
+  day: 'night-off',
+  dark: 'night-dark',
+  night: 'night-on',
+  ritual: 'night-ritual',
+};
 
 /** The look last chosen in len mode (the only mode that can switch); '1' is how night used to be saved. */
 function savedLook(): Look {
   const v = load(StorageKey.Night);
   if (v === '1' || v === 'night') return 'night';
-  return v === 'ritual' ? 'ritual' : 'day';
+  return v === 'ritual' || v === 'dark' ? v : 'day';
 }
 
 /** Particle count scales with screen area: dense enough to read as solid, light enough for phones. */
@@ -244,8 +249,9 @@ class App implements ControlHost {
     // A locked mode ignores N, MIDI toggles and anything else asking for another look.
     if (this.mode.look && look !== this.mode.look) return;
     this.renderer.look = look;
-    // Night and ritual share the dark page; ritual then recolours it.
-    document.documentElement.toggleAttribute('data-night', look !== 'day');
+    // Party (night) and ritual share the dusk page; ritual then recolours it. Night (dark) inverts day's.
+    document.documentElement.toggleAttribute('data-night', look === 'night' || look === 'ritual');
+    document.documentElement.toggleAttribute('data-dark', look === 'dark');
     document.documentElement.toggleAttribute('data-ritual', look === 'ritual');
     byId(LOOK_RADIO[look], HTMLInputElement).checked = true;
     if (!this.mode.look) save(StorageKey.Night, look);

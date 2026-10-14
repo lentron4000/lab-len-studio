@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { labMode } from '../src/lab-mode';
 
 describe('lab mode', () => {
-  it('is the plain day toy without a parameter', () => {
-    expect(labMode('')).toMatchObject({ look: 'day', formations: false });
+  it('is the plain toy without a parameter: free to switch looks, no formations', () => {
+    expect(labMode('')).toMatchObject({ look: null, formations: false });
   });
 
   it('locks the look named by ?m=', () => {

@@ -4,8 +4,8 @@
  */
 
 /* Layout: the shape fills the screen; one floating control panel at the bottom.
-   Day is ink on white; night (data-night on <html>) follows the canvas into a dusk palette, and
-   ritual (data-ritual as well) into black. */
+   Day is ink on white; Night (data-dark on <html>) is day inverted; Party (data-night) follows the
+   canvas into a dusk palette, and ritual (data-ritual as well) into black. */
 *,
 *::before,
 *::after {
@@ -36,6 +36,16 @@ body {
   --line: #34274f;
   --panel: rgba(21, 14, 39, 0.78);
   --focus: #ff5fd2;
+  color-scheme: dark;
+}
+/* Night: day inverted, white on black */
+:root[data-dark] {
+  --paper: #000000;
+  --ink: #f2f2f0;
+  --muted: #8e9096;
+  --line: #2a2b2e;
+  --panel: rgba(0, 0, 0, 0.82);
+  --focus: #8fb0ff;
   color-scheme: dark;
 }
 /* Ritual: black, bone text, blood-red accents */
@@ -156,6 +166,9 @@ canvas#c {
   outline: 2px solid var(--focus);
   outline-offset: 4px;
   border-radius: 2px;
+}
+:root[data-dark] .brand {
+  --brand: #ffffff;
 }
 :root[data-night] .brand {
   --brand: #b7ff9a;
