@@ -17,7 +17,7 @@ function listen(spec: TrackSpec): { snareTimes: number[]; listener: MusicListene
     const now = s / SAMPLE_RATE;
     listener.push(frames, now);
     listener.tick(128 / SAMPLE_RATE, now);
-    for (const _ of listener.takeSnares()) snareTimes.push(now);
+    for (let k = listener.takeSnares().length; k > 0; k--) snareTimes.push(now);
   }
   return { snareTimes, listener };
 }
