@@ -25,8 +25,8 @@ it('a still pointer: gas ignores it, liquid keeps clear of it, attract gathers',
   // Gas neither pulls in nor pushes away for a still pointer.
   expect(gasAfter).toBeLessThanOrEqual(gasBefore + 4);
   expect(gasAfter).toBeGreaterThanOrEqual(gasBefore - 4);
-  // Liquid treats it as a solid object: it clears out from round it.
-  const [, liquidAfter] = gathered('water', 20);
+  // Liquid treats it as a solid object: dots keep 2 px clear of the cursor circle (7.5 px).
+  const [, liquidAfter] = gathered('water', 9);
   expect(liquidAfter).toBe(0);
   const [before, after] = gathered('attract');
   expect(after).toBeGreaterThan(before * 2);

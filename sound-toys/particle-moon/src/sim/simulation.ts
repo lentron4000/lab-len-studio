@@ -56,8 +56,13 @@ const HUDDLE_PACK = 0.33;
 const BREAK_ENERGY = 1.2;
 /** Pointer speed (px/step) at which fully tight fluid gives way completely (4 when loose). */
 const GIVE_SPEED_TIGHT = 24;
-/** Liquid: a cushion this many body radii wide round the (always solid) body, pushing LIQUID_PUSH. */
-const LIQUID_CUSHION = 1.7;
+/**
+ * Liquid: the mouse is a solid object (still or moving). Dots keep LIQUID_GAP px from the edge of the
+ * cursor circle (CURSOR_RADIUS, see styles.css); a cushion LIQUID_CUSHION px deep eases them aside.
+ */
+const CURSOR_RADIUS = 7.5;
+const LIQUID_GAP = 2;
+const LIQUID_CUSHION = 1.5;
 const LIQUID_PUSH = 1.2;
 /** Pointer speed (px/step) at which the body reaches full size. */
 const BODY_FULL_SPEED = 12;
@@ -117,6 +122,12 @@ const BLAST_PUSH = 7.5;
 /** Disc swirl: spread of particles' own orbit rates (±), and how firmly loose particles follow the swirl. */
 const SWIRL_SPREAD = 0.35;
 const SWIRL_GRIP = 0.08;
+/**
+ * Dot radius at fully Tight, as a share of the particle spacing. The disc overlaps into a solid; the
+ * globe's front-face neighbours sit about 0.94 spacings apart, so its dots stop just short of touching.
+ */
+const DISC_TIGHT_DOT = 0.81;
+const GLOBE_TIGHT_DOT = 0.46;
 /** Seconds to morph between disc and globe. */
 const MORPH_SECONDS = 1.6;
 /**
@@ -292,6 +303,17 @@ export class Simulation {
   /** The State slider as this mode uses it: capped at its loosest (see PhysicsMode.looseCap). */
   get slider(): number {
     return Math.min(this.stateTarget, this.mode.looseCap);
+  }
+
+  /** Drawn dot radius (px, before perspective). Packed: dots overlap into a solid. Open: small points. */
+  dotRadius(): number {
+    const R = this.view.radius;
+    const spacing = R * Math.sqrt(Math.PI / this.count) * lerp(1, Math.SQRT2, this.globe);
+    return lerp(
+      spacing * lerp(DISC_TIGHT_DOT, GLOBE_TIGHT_DOT, this.globe),
+      Math.max(1.15, R / 170),
+      Math.pow(this.state, 0.7),
+    );
   }
 
   get viewport(): Readonly<Viewport> {
@@ -596,8 +618,12 @@ export class Simulation {
     // Its solid core only exists while it moves: still, it pushes nothing; full size at BODY_FULL_SPEED.
     // Liquid treats it as a solid object always, still or moving (it flows round, never through, and keeps
     // a clear gap); gas only feels it at speed.
-    const core = mode.ripple ? body : body * Math.min(1, pSpeed / BODY_FULL_SPEED);
-    const cushion = mode.ripple ? core * LIQUID_CUSHION : 0;
+    // Liquid: the clear gap is measured from the cursor's edge to the dots' edges.
+    const core = mode.ripple
+      ? CURSOR_RADIUS + LIQUID_GAP + this.dotRadius()
+      : body * Math.min(1, pSpeed / BODY_FULL_SPEED);
+    const cushion = mode.ripple ? core + LIQUID_CUSHION : 0;
+    const liquidHold = mode.ripple ? core : 0;
     const flowReach = body * 5;
     // Faster pointer, longer wake (shape radii, capped).
     const wakeLength = Math.min(R * 1.6, body * (2 + pSpeed * 0.5));
@@ -1045,6 +1071,18 @@ export class Simulation {
       x[i] += nvx;
       y[i] += nvy;
       z[i] += nvz;
+      if (liquidHold && pointer.active) {
+        // After moving: no liquid dot ends the step inside the gap round the cursor, however hard its
+        // springs pulled it in.
+        const ps = camera / (camera - z[i]);
+        const rx = cx + (x[i] - cx) * ps - pointer.x;
+        const ry = cy + (y[i] - cy) * ps - pointer.y;
+        const r = Math.hypot(rx, ry) || 1e-3;
+        if (r < liquidHold) {
+          x[i] += ((rx / r) * (liquidHold - r)) / ps;
+          y[i] += ((ry / r) * (liquidHold - r)) / ps;
+        }
+      }
       ke += sp2;
       const stir = Math.min(1, (Math.hypot(nvx - tvx, nvy - tvy, nvz) - calm) * exciteGain);
       excite[i] = stir > excite[i] ? excite[i] + (stir - excite[i]) * 0.5 : excite[i] * EXCITE_DECAY;

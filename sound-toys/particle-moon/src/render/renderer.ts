@@ -22,12 +22,6 @@ import {
 import { Tracers } from './tracers';
 
 const BANDS = 4;
-/**
- * Dot radius at fully Tight, as a share of the particle spacing. The disc overlaps into a solid; the
- * globe's front-face neighbours sit about 0.94 spacings apart, so its dots stop just short of touching.
- */
-const DISC_TIGHT_DOT = 0.81;
-const GLOBE_TIGHT_DOT = 0.46;
 /** Spinning, each particle is drawn as a streak: its smoothed screen motion over this many frames. */
 const STREAK_FRAMES = 7;
 /** Spin speed (radians per step) at which streaks reach full length; longest streak in shape radii. */
@@ -154,13 +148,7 @@ export class Renderer {
     const re = sim.effectiveRadius();
     const camera = R * CAMERA_DISTANCE;
     const open = Math.pow(sim.state, 0.7);
-    const spacing = R * Math.sqrt(Math.PI / N) * lerp(1, Math.SQRT2, sim.globe);
-    // Packed: dots overlap into a solid. Open: small points.
-    const dot = lerp(
-      spacing * lerp(DISC_TIGHT_DOT, GLOBE_TIGHT_DOT, sim.globe),
-      Math.max(1.15, R / 170),
-      open,
-    );
+    const dot = sim.dotRadius();
     // Ritual keeps only a trace of the jitter: per-frame wobble is what made it glitter.
     const jitter =
       (0.9 + sim.state * 1.5 * sim.mode.jitter) * (this.reducedMotion ? 0.3 : 1) * (ritual ? 0.25 : 1);
