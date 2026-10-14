@@ -18,7 +18,8 @@ interface Look {
   /** Physics modes and shapes that suit the scene; the director moves between them. */
   modes: readonly string[];
   shapes: readonly string[];
-  moon: string;
+  /** Chance the moon is on after each look change. */
+  moon: number;
   /** Seconds to glide to these values. */
   glide: number;
   /** How far State swings open on each beat (0 for none), on top of the glide. */
@@ -143,7 +144,6 @@ export class Director {
         if (this.free(id)) this.controls.setSlider(id, v);
       }
     }
-    this.choose('moon', look.moon);
     // A new scene that doesn't suit the current look changes it at once; ambient music changes on its own clock.
     const suits = look.modes.includes(this.chosen.mode) && look.shapes.includes(this.chosen.shape);
     const beat = f.kickRate >= BEAT_RATE;
@@ -179,6 +179,8 @@ export class Director {
     };
     this.choose('mode', pick(look.modes, this.chosen.mode));
     this.choose('shape', pick(look.shapes, this.chosen.shape));
+    // The moon comes and goes at random, but only here, on the music's own changes.
+    this.choose('moon', Math.random() < look.moon ? 'on' : 'off');
     this.lookBeats = 0;
     this.lookAt = this.now;
     this.lookScene = this.scene;
@@ -221,6 +223,13 @@ export class Director {
     // Spin to the tempo: with the kick driving, about one turn every SPIN_SECONDS; without it, slower
     // divisions of that same speed so it stays in time.
     const kickSpin = spinIndex(this.bpm);
+    // Slow, unsynchronised cycles (0–1) that keep loose, kickless passages moving without looping.
+    const t = this.now;
+    const wander =
+      0.5 + 0.3 * Math.sin((t / 23) * 2 * Math.PI) + 0.2 * Math.sin((t / 37) * 2 * Math.PI + 1.3);
+    const wander2 =
+      0.5 + 0.3 * Math.sin((t / 29) * 2 * Math.PI + 2.1) + 0.2 * Math.sin((t / 47) * 2 * Math.PI);
+    const swell = Math.max(0, f.rise);
     // Depth's deep end (past 0.75 on the slider) is kept for a strong, present kick.
     const strongKick =
       f.kickRate >= BEAT_RATE
@@ -231,15 +240,16 @@ export class Director {
     const through = Math.min(1, this.sceneFor / 16); // how far into the scene (builds ramp with it)
     switch (this.scene) {
       case 'drift':
-        // Ambient: loose and floating, opening as it swells; brighter tones bring the moon closer.
+        // Ambient: well into Loose, wandering on slow cycles and opening further as the music swells;
+        // brighter tones bring the moon's pull up.
         return {
-          state: 0.35 + 0.5 * ambience,
+          state: 0.6 + 0.3 * wander + 0.1 * swell,
           depth: 0.25,
           spin: spin(3),
-          mforce: 0.3 + 0.4 * bright,
-          modes: ['water', 'gas'],
+          mforce: 0.25 + 0.3 * bright + 0.35 * wander2,
+          modes: ['water', 'gas', 'attract'],
           shapes: ['globe', 'disc'],
-          moon: 'on',
+          moon: 0.5,
           glide: 4,
           swing: 0,
         };
@@ -252,7 +262,7 @@ export class Director {
           // Anything goes in a groove; brighter music leans to the more agitated modes.
           modes: bright > 0.55 ? ['gas', 'repel', 'attract', 'water'] : ['water', 'attract', 'gas', 'repel'],
           shapes: ['disc', 'globe'],
-          moon: 'on',
+          moon: 0.6,
           glide: 2,
           swing: 0.18 * (0.5 + 0.5 * e),
         };
@@ -265,7 +275,7 @@ export class Director {
           mforce: 0.6 + 0.3 * through,
           modes: ['attract', 'water'],
           shapes: ['disc', 'globe'],
-          moon: 'on',
+          moon: 0.7,
           glide: 1.5,
           swing: 0.15 * through,
         };
@@ -279,19 +289,19 @@ export class Director {
           mforce: 0.5,
           modes: ['gas', 'repel'],
           shapes: ['disc', 'globe'],
-          moon: 'on',
+          moon: 0.8,
           glide: 0.3,
           swing: 0.3,
         };
       case 'breakdown':
         return {
-          state: 0.45 + 0.45 * ambience,
+          state: 0.55 + 0.3 * wander + 0.1 * swell,
           depth: 0.25,
           spin: spin(2),
-          mforce: 0.4,
-          modes: ['water', 'gas'],
+          mforce: 0.3 + 0.4 * wander2,
+          modes: ['water', 'gas', 'attract'],
           shapes: ['disc', 'globe'],
-          moon: 'off',
+          moon: 0.35,
           glide: 3,
           swing: 0,
         };

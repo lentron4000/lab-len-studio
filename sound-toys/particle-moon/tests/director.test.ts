@@ -71,11 +71,11 @@ describe('AI mode', () => {
     expect(hits.length).toBeGreaterThan(0);
   });
 
-  it('plays ambient music loose and liquid, and drops tight and deep', () => {
+  it('plays ambient music well into Loose, and drops tight and deep', () => {
     const { director, sliders, options } = setup();
     play(director, ambient, 30, 0);
-    expect(options.get('mode')).toBe('water');
-    expect(sliders.get('state')).toBeGreaterThan(0.4);
+    expect(['water', 'gas', 'attract']).toContain(options.get('mode'));
+    expect(sliders.get('state')).toBeGreaterThan(0.55);
     play(director, groove, 10, 30);
     play(director, breakdown, 8, 40);
     play(director, drop, 4, 48);
@@ -145,5 +145,26 @@ describe('AI mode', () => {
     play(strong.director, breakdown, 8, 0);
     play(strong.director, drop, 4, 8);
     expect(strong.sliders.get('depth')).toBeGreaterThan(0.9);
+  });
+
+  it('switches the moon only on the look changes, and not always the same way', () => {
+    const { director, options } = setup();
+    play(director, groove, 10, 0, 124);
+    const moons: string[] = [];
+    let t = 10;
+    for (let bar = 0; bar < 64; bar++) {
+      for (let b = 0; b < 4; b++) {
+        const before = options.get('moon');
+        director.beat();
+        play(director, groove, 60 / 124, t, 124);
+        t += 60 / 124;
+        const changedHere = options.get('moon') !== before;
+        // Only on a bar that starts a new look (every 4 bars).
+        if (changedHere) expect((bar * 4 + b + 1) % 16).toBe(0);
+      }
+      if (bar % 4 === 3) moons.push(options.get('moon') ?? '');
+    }
+    expect(moons).toContain('on');
+    expect(moons).toContain('off');
   });
 });
