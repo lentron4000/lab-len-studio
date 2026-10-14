@@ -50,6 +50,13 @@ export interface PhysicsMode {
   looseCap: number;
   /** State at the slider's loose end, the whole slider scaled to fit (0–1); looseCap then clips it. */
   looseRange: number;
+  /**
+   * Vapour modes: how far a kick opens it toward the cloud end. The hit (× Depth, plus any blast) is
+   * scaled by kickReach and capped at fully open, then by kickOpen: gas A keeps every kick to a breath
+   * (reach 1, open 0.3); gas B opens in step with Depth, fully only for a full-Deep kick.
+   */
+  kickReach: number;
+  kickOpen: number;
   /** Kicks travel out from the centre as a ripple instead of moving everything at once (0 or 1). */
   ripple: number;
   /**
@@ -87,6 +94,8 @@ export const PHYSICS_MODES: Record<PhysicsModeId, PhysicsMode> = {
     atmosphere: 0,
     looseCap: 1,
     looseRange: 0.9,
+    kickReach: 1,
+    kickOpen: 0.3,
     loosePointer: 1,
     description:
       'Air. Molecules fly in straight lines and bounce off each other. Sweep the pointer through to push a current; it diffuses back.',
@@ -113,7 +122,9 @@ export const PHYSICS_MODES: Record<PhysicsModeId, PhysicsMode> = {
     ripple: 0,
     atmosphere: 1,
     looseCap: 1,
-    looseRange: 0.9,
+    looseRange: 0.55,
+    kickReach: 0.4,
+    kickOpen: 1,
     loosePointer: 1,
     description:
       'Gas B: an atmosphere. Banded rings drift in opposite directions and slow currents swirl through them. Music or the pointer stirs it, a kick shatters the bands into eddies, and Tight resists.',
@@ -141,6 +152,8 @@ export const PHYSICS_MODES: Record<PhysicsModeId, PhysicsMode> = {
     atmosphere: 0,
     looseCap: 0.75,
     looseRange: 1,
+    kickReach: 1,
+    kickOpen: 0.3,
     loosePointer: 0.35,
     description:
       'Liquid. No fixed positions, only cohesion and surface tension. It swirls, pulls into tendrils and pools back together.',

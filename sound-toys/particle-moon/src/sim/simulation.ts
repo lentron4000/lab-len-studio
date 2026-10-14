@@ -147,7 +147,7 @@ const ATMO_KICK = 0.9;
 const ATMO_SETTLE_BEATS = 2;
 const ATMO_GRIP = 0.035;
 /** Smoke drifts on its own toward Loose: stir rising from none at Tight to this much at the loosest. */
-const ATMO_AMBIENT = 0.4;
+const ATMO_AMBIENT = 0.7;
 const ATMO_TIGHT = 0.2;
 const ATMO_STIR_SPEED = 10;
 const ATMO_STIR_FADE = 1.5;
@@ -227,8 +227,7 @@ const GAS_BREATH_CURVE = 3;
 const GAS_BLAST_PUSH = 1;
 /** Gas's shockwave strength against the other modes' (it swells; it isn't thrown). */
 const GAS_SHOCK = 0.4;
-/** How far a kick opens gas toward the cloud end, and how much of the home pull a blast lets go, against the other modes. */
-const GAS_OPEN = 0.3;
+/** How much of the home pull a blast lets go in gas, against the other modes. (How far a kick opens it: PhysicsMode.kickOpen.) */
 const GAS_RELEASE = 0.25;
 /** Strongest pad hit: three times a full kick. */
 export const BLAST_MAX = 3;
@@ -439,9 +438,9 @@ export class Simulation {
     }
   }
 
-  /** Atmosphere: what is stirring it (0–1): sound, the pointer, a kick, and on its own toward Loose. */
-  private atmoActivity(slider: number): number {
-    return Math.min(1, this.sound + this.stir + this.turbulence + ATMO_AMBIENT * slider);
+  /** Atmosphere: what is stirring it (0–1): sound, the pointer, a kick, and on its own toward Loose (`pos`, the State slider). */
+  private atmoActivity(pos: number): number {
+    return Math.min(1, this.sound + this.stir + this.turbulence + ATMO_AMBIENT * Math.min(1, pos));
   }
 
   /** The State slider as this mode uses it: capped at its loosest (see PhysicsMode.looseCap). */
@@ -562,7 +561,10 @@ export class Simulation {
     // A rippling mode doesn't open all at once on a kick; the ripple carries the kick instead.
     // The kick opens the shape over a few frames (attack), then lets go at the usual rate.
     const openTarget =
-      Math.min(1, this.pulse * this.depth * (1 - mode.ripple) + blast) * lerp(1, GAS_OPEN, mode.vapor);
+      Math.min(
+        1,
+        (this.pulse * this.depth * (1 - mode.ripple) + blast) * lerp(1, mode.kickReach, mode.vapor),
+      ) * lerp(1, mode.kickOpen, mode.vapor);
     this.open += (openTarget - this.open) * (openTarget > this.open ? KICK_ATTACK : 1);
     this.state = slider + (1 - slider) * this.open;
     const e = this.state;
@@ -647,7 +649,7 @@ export class Simulation {
       lerp(e, slider, mode.vapor) *
       scale *
       (1 - fw) *
-      lerp(1, this.atmoActivity(slider), mode.atmosphere);
+      lerp(1, this.atmoActivity(this.stateTarget), mode.atmosphere);
     const damping = lerp(lerp(SOLID.damping, mode.damping, e), 0.9, fw) * (1 - 0.1 * gassy);
     const formR = re * FORMATION_SCALE * (1 + 0.3 * burn);
     const thermal =
@@ -771,7 +773,9 @@ export class Simulation {
       this.stir *= Math.exp(-1 / 60 / ATMO_STIR_FADE);
       if (over)
         this.stir = Math.max(this.stir, Math.min(1, Math.hypot(pointer.vx, pointer.vy) / ATMO_STIR_SPEED));
-      atmoLevel = atmo * this.atmoActivity(slider) * lerp(ATMO_TIGHT, 1, slider);
+      // (By where the State slider sits, not how loose that makes the cloud: full Loose stirs fully.)
+      const pos = Math.min(1, this.stateTarget);
+      atmoLevel = atmo * this.atmoActivity(pos) * lerp(ATMO_TIGHT, 1, pos);
       // Slow, quicker with sound; a kick's turbulence churns faster still.
       this.atmoTime += 1 + ATMO_SOUND_PACE * this.sound + 2 * this.turbulence;
       const calm = 1 / (1 + 2 * this.turbulence);

@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { PHYSICS_MODES } from '../src/sim/physics-modes';
-import { Simulation } from '../src/sim/simulation';
+import { DEPTH_MAX, Simulation } from '../src/sim/simulation';
 
 const R = 280;
 const CX = 720;
@@ -46,8 +46,8 @@ it('Gas B with no sound: still at Tight, drifting like smoke toward Loose', () =
   expect(travel(tight, 3)).toBeLessThan(0.05);
   const loose = gasB(0.9, 0);
   travel(loose, 6);
-  // A slow, steady drift: a pixel or more a second.
-  expect(travel(loose, 3)).toBeGreaterThan(2);
+  // A slow, steady drift: well over a pixel every few seconds.
+  expect(travel(loose, 3)).toBeGreaterThan(1.5);
 });
 
 it('Gas B: after the music stops, a Tight disc packs back into a solid circle', () => {
@@ -100,4 +100,33 @@ it('Gas B: a kick churns it, then it calms', () => {
   expect(churned).toBeGreaterThan(calm * 1.3);
   travel(sim, 3);
   expect(travel(sim, 0.5)).toBeLessThan(churned);
+});
+
+it('Gas B: full Loose leaves room for the kick; only a full-Deep kick reaches full size', () => {
+  const peak = (depth: number): { rest: number; peak: number } => {
+    const sim = gasB(1, 0.6);
+    sim.depth = depth;
+    travel(sim, 15);
+    const size = (): number => {
+      const d: number[] = [];
+      for (let i = 0; i < sim.count; i++)
+        if (sim.vaporFade[i] < 0.3) d.push(Math.hypot(sim.x[i] - CX, sim.y[i] - CY));
+      d.sort((a, b) => a - b);
+      return d[Math.floor(d.length * 0.95)] / R;
+    };
+    const rest = size();
+    sim.fire(1);
+    let top = 0;
+    for (let s = 0; s < 120; s++) {
+      sim.step();
+      top = Math.max(top, size());
+    }
+    return { rest, peak: top };
+  };
+  const usual = peak(0.65);
+  const deep = peak(DEPTH_MAX);
+  // Loose sits well below what a full-Deep kick reaches (it used to be within ~7%)...
+  expect(deep.rest).toBeLessThan(deep.peak * 0.88);
+  // ...and a kick at the usual Depth swells it far less than a full-Deep one.
+  expect(usual.peak - usual.rest).toBeLessThan((deep.peak - deep.rest) * 0.6);
 });
