@@ -128,20 +128,20 @@ const ATMO_BAND_PERIOD = 90;
 const ATMO_BAND_WARP = 0.07;
 const ATMO_SOUND_PACE = 2;
 /**
- * The rings show as the homes themselves gather toward their crests: by up to ATMO_BAND_DEPTH of the
+ * The rings show as the homes themselves gather toward their crests: up to ATMO_BAND_DEPTH of the
  * way (fully stirred, fully Loose), eased in and out over ATMO_BAND_EASE s, so they form slowly and,
  * when the stirring stops, the homes slide back and the cloud settles the way Gas A does.
  */
-const ATMO_BAND_DEPTH = 0.55;
+const ATMO_BAND_DEPTH = 0.5;
 const ATMO_BAND_EASE = 6;
 /**
  * Where rings form: a slowly wandering field (it moves ATMO_PATCH_PACE× as fast as the rings themselves)
  * starts allowing them above ATMO_PATCH_FROM and fully above ATMO_PATCH_FULL (of −1–1), so about a
- * quarter of the cloud carries ring arcs at any time, each forming and fading in its own place.
+ * third of the cloud carries ring arcs at any time, each forming and fading in its own place.
  */
 const ATMO_PATCH_PACE = 4;
-const ATMO_PATCH_FROM = 0.2;
-const ATMO_PATCH_FULL = 0.75;
+const ATMO_PATCH_FROM = 0.05;
+const ATMO_PATCH_FULL = 0.6;
 /**
  * The swirl: a few soft eddies (each turning the air round its own centre, half one way and half the
  * other, fastest ATMO_SWIRL_SPEED at ATMO_SWIRL_SIZE radii out and fading beyond) that wander slowly
@@ -161,7 +161,9 @@ const ATMO_KICK = 0.9;
 const ATMO_SETTLE_BEATS = 2;
 const ATMO_GRIP = 0.035;
 /** Smoke drifts on its own toward Loose: stir rising from none at Tight to this much at the loosest. */
-const ATMO_AMBIENT = 0.7;
+const ATMO_AMBIENT = 0.45;
+/** Gas B's molecules idle at this share of gas A's speed when nothing stirs them (ambient drift stays slow). */
+const ATMO_CALM_SPEED = 0.25;
 const ATMO_TIGHT = 0.2;
 const ATMO_STIR_SPEED = 10;
 const ATMO_STIR_FADE = 1.5;
@@ -672,8 +674,14 @@ export class Simulation {
     // How loose it looks and moves: gas B sits smaller than its slider says, but its molecules fly, drag
     // and scatter like gas A's at the same slider (cooler, they'd settle into a lattice and show stripes).
     const looseLook = Math.min(1, e * mode.sizeGain);
+    // (Gas B's molecules idle at ATMO_CALM_SPEED of that until sound, the pointer or a kick stirs them.)
+    const stirred = Math.min(1, this.sound + this.stir + this.turbulence);
     const targetSpeed =
-      mode.speed * lerp(e, Math.min(1, slider * mode.sizeGain), mode.vapor) * scale * (1 - fw);
+      mode.speed *
+      lerp(e, Math.min(1, slider * mode.sizeGain), mode.vapor) *
+      scale *
+      (1 - fw) *
+      lerp(1, lerp(ATMO_CALM_SPEED, 1, stirred), mode.atmosphere);
     const damping = lerp(lerp(SOLID.damping, mode.damping, looseLook), 0.9, fw) * (1 - 0.1 * gassy);
     const formR = re * FORMATION_SCALE * (1 + 0.3 * burn);
     const thermal =
@@ -824,7 +832,6 @@ export class Simulation {
     this.bandDepth +=
       (ATMO_BAND_DEPTH * atmoLevel - this.bandDepth) * (1 - Math.exp(-1 / 60 / ATMO_BAND_EASE));
     const bandDepth = this.bandDepth > 1e-4 ? this.bandDepth : 0;
-    const twoPiN = 2 * Math.PI * ATMO_BANDS;
     // How far a home at `lane` moves toward its ring's crest (in lanes), and the rings' slow bend round the circle.
     // Rings only form in patches: where a slowly wandering field rises past a threshold, so arcs come
     // and go in different places rather than whole rings standing round the cloud.
@@ -835,8 +842,11 @@ export class Simulation {
       const t = Math.min(1, Math.max(0, (f - ATMO_PATCH_FROM) / (ATMO_PATCH_FULL - ATMO_PATCH_FROM)));
       return t * t * (3 - 2 * t);
     };
-    const toCrest = (lane: number, angle: number): number =>
-      (-Math.sin(twoPiN * lane - bandPhase) / twoPiN) * bandDepth * ringPatch(angle, lane);
+    // A home moves that share (bandDepth) of the way to its ring's crest, so where rings form they tighten.
+    const toCrest = (lane: number, angle: number): number => {
+      const phase = ATMO_BANDS * lane - bandPhase / (2 * Math.PI);
+      return (-(phase - Math.round(phase)) / ATMO_BANDS) * bandDepth * ringPatch(angle, lane);
+    };
     const ringBend = (angle: number): number =>
       ATMO_BAND_WARP * Math.sin(2 * angle + bandPhase * 1.3) +
       ATMO_BAND_WARP * 0.6 * Math.sin(3 * angle - bandPhase * 0.7 + 1);
