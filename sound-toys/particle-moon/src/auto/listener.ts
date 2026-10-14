@@ -29,8 +29,8 @@ export interface MusicFeatures {
 
 const FRAME = 0.01; // seconds per analysis frame
 /** Loudness range mapped to 0–1, in dBFS. */
-const FLOOR_DB = -60;
-const RANGE_DB = 50;
+const FLOOR_DB = -50; // room noise on a live input reads as (near) silence
+const RANGE_DB = 42;
 /** Time constants, in seconds. */
 const LOUD_TAU = 0.08;
 const ENERGY_TAU = 1.5;

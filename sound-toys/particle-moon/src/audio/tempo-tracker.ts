@@ -30,6 +30,8 @@ const SILENCE_DB = -55;
 /** A kick is the kick band's 20 ms energy jumping this many times over its previous 150 ms (~7 dB). */
 const KICK_RATIO = 5;
 const KICK_MIN_LEVEL = 0.15;
+/** Least kick-band energy (mean square) a kick needs: −42 dBFS. Real kicks sit around −20 to −6. */
+const KICK_MIN_ENERGY = 10 ** (-42 / 10);
 const KICK_MIN_GAP = 0.18;
 /** Kick detection lands ~8 ms after the attack; the beat clock is corrected by this much. */
 const KICK_LATENCY = 0.008;
@@ -218,6 +220,9 @@ export class TempoTracker {
     if (
       recent <= KICK_RATIO * base + 1e-12 ||
       frame.loLevel <= KICK_MIN_LEVEL ||
+      // Everything above is relative; a kick must also be loud in itself, or room noise and bumps on a
+      // live input (once the recent peak has faded) pass as kicks.
+      frame.loEnergy < KICK_MIN_ENERGY ||
       t - this.lastKick <= KICK_MIN_GAP
     ) {
       return 0;

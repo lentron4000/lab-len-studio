@@ -172,3 +172,24 @@ describe('TempoTracker manual control', () => {
     expect(tracker.displayBpm()).toBe(0);
   });
 });
+
+describe('TempoTracker with no music', () => {
+  it('hears no kicks and no tempo in quiet room noise with low thumps', () => {
+    // A live input in a quiet room: noise around −50 dBFS and a soft low thump about once a second.
+    const seconds = 30;
+    const samples = new Float32Array(seconds * SAMPLE_RATE);
+    let seed = 12345;
+    const rand = (): number => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32) * 2 - 1;
+    for (let i = 0; i < samples.length; i++) samples[i] = rand() * 0.004;
+    for (let t = 0.5; t < seconds; t += 0.9 + 0.3 * Math.abs(rand())) {
+      const start = Math.floor(t * SAMPLE_RATE);
+      for (let k = 0; k < 0.15 * SAMPLE_RATE && start + k < samples.length; k++) {
+        samples[start + k] +=
+          0.006 * Math.sin((2 * Math.PI * 55 * k) / SAMPLE_RATE) * Math.exp(-k / (0.05 * SAMPLE_RATE));
+      }
+    }
+    const r = run({ samples, kickTimes: [], beatSeconds: 1 });
+    expect(r.kicks.length).toBe(0);
+    expect(r.tracker.displayBpm()).toBe(0);
+  });
+});
