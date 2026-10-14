@@ -113,20 +113,33 @@ const SILENT_Z_DAMPING = 0.8;
  * percent). Off for held formations and the globe.
  */
 /**
- * Atmosphere (Gas B): rings round the centre (latitudes on the globe) drift in alternating directions,
- * and a slow swirl wanders through them. Nothing moves until something stirs it: sound, the pointer
- * moving over the cloud (fading over ATMO_STIR_FADE s), or a kick. Tight resists (ATMO_TIGHT of the
- * pull). Each flow is a velocity the particles are eased toward (ATMO_GRIP per step), so it never runs
- * away. Speeds are px/step at the reference radius.
+ * Atmosphere (Gas B): smoke that settles into rings round the centre (latitudes on the globe) and
+ * evolves on its own, slowly. Nothing turns the cloud: particles drift across the rings toward their
+ * crests (ATMO_GATHER px/step), the rings warp and wander over ATMO_BAND_PERIOD s, and a gentle swirl
+ * moves through them. It's stirred by sound, the pointer moving over the cloud (fading over
+ * ATMO_STIR_FADE s), a kick, and on its own toward Loose (ATMO_AMBIENT). Sound quickens the evolution
+ * (by up to ATMO_SOUND_PACE×). Tight resists (ATMO_TIGHT of the pull). Each flow is a velocity the
+ * particles are eased toward (ATMO_GRIP per step). Speeds are px/step at the reference radius.
  */
 const ATMO_BANDS = 2;
-const ATMO_BAND_SPEED = 2;
+const ATMO_GATHER = 0.35;
+const ATMO_BAND_PERIOD = 90;
+/** How far the rings wave in and out round the circle (shape radii). */
+const ATMO_BAND_WARP = 0.07;
+const ATMO_SOUND_PACE = 2;
+/**
+ * The rings show as the homes themselves gather toward their crests: by up to ATMO_BAND_DEPTH of the
+ * way (fully stirred, fully Loose), eased in and out over ATMO_BAND_EASE s, so they form slowly and,
+ * when the stirring stops, the homes slide back and the cloud settles the way Gas A does.
+ */
+const ATMO_BAND_DEPTH = 0.8;
+const ATMO_BAND_EASE = 6;
 /** The swirl: waves of a stream function (it stirs without squeezing), their wavelength in shape radii, speed and drift. */
 const ATMO_SWIRL_WAVES = 3;
-const ATMO_SWIRL_LENGTH = 0.7;
-const ATMO_SWIRL_SPEED = 1.6;
-const ATMO_SWIRL_DRIFT = 0.006;
-/** A kick's turbulence: smaller, faster eddies that take over from the bands, settling over ATMO_SETTLE_BEATS. */
+const ATMO_SWIRL_LENGTH = 0.8;
+const ATMO_SWIRL_SPEED = 0.6;
+const ATMO_SWIRL_DRIFT = 0.0015;
+/** A kick's turbulence: smaller, faster eddies that take over from the rings, settling over ATMO_SETTLE_BEATS. */
 const ATMO_EDDY_LENGTH = 0.45;
 const ATMO_EDDY_SPEED = 2.6;
 const ATMO_EDDY_DRIFT = 0.03;
@@ -135,15 +148,6 @@ const ATMO_SETTLE_BEATS = 2;
 const ATMO_GRIP = 0.035;
 /** Smoke drifts on its own toward Loose: stir rising from none at Tight to this much at the loosest. */
 const ATMO_AMBIENT = 0.4;
-/**
- * Once the stirring has almost died away (below ATMO_UNWIND_BELOW), the bands' shear unwinds over
- * ATMO_UNWIND seconds, so a still Tight disc packs solid again. (Unwinding any sooner stalls the bands.)
- */
-const ATMO_UNWIND = 1.5;
-const ATMO_UNWIND_BELOW = 0.25;
-const ATMO_UNWIND_MIN = 1.5;
-/** Fastest a home is turned by its band, radians per step (keeps the very centre from whirling). */
-const ATMO_TURN_MAX = 0.02;
 const ATMO_TIGHT = 0.2;
 const ATMO_STIR_SPEED = 10;
 const ATMO_STIR_FADE = 1.5;
@@ -273,10 +277,6 @@ export class Simulation {
   readonly vapor: Float32Array;
   /** Disc swirl: each particle's turn so far about the centre, and its own rate (×spin). */
   private readonly discTurn: Float32Array;
-  /** Atmosphere (Gas B): each sphere home's turn about the globe axis, carried by its latitude's band. */
-  private readonly globeTurn: Float32Array;
-  /** Atmosphere: each disc home's turn round the centre, carried by its ring (kept apart from spin's). */
-  private readonly atmoTurn: Float32Array;
   private readonly swirlRate: Float32Array;
   /**
    * 0–1 per particle: how close it is to an attracting mouse. Those particles pack tighter and buzz
@@ -347,10 +347,12 @@ export class Simulation {
   /** How open the kick has the shape right now; it rises over a few frames (attack) rather than at once. */
   private open = 0;
   /** Centroid of the particles in the shape, from the last step: offset from centre (px) and velocity. */
-  /** Atmosphere: how stirred the pointer has left it, kick turbulence (0–~1.5), and its clock. */
+  /** Atmosphere: how stirred the pointer has left it, kick turbulence (0–~1.5), and its clock (steps, quickened by sound). */
   private stir = 0;
   private turbulence = 0;
   private atmoTime = 0;
+  /** How far the homes have gathered into the rings (0–ATMO_BAND_DEPTH), eased. */
+  private bandDepth = 0;
   private readonly swirlWaves = Array.from({ length: ATMO_SWIRL_WAVES * 2 }, (_, k) => ({
     angle: Math.random() * Math.PI * 2,
     phase: Math.random() * Math.PI * 2,
@@ -397,8 +399,6 @@ export class Simulation {
     this.excite = f();
     this.vapor = f();
     this.discTurn = f();
-    this.globeTurn = f();
-    this.atmoTurn = f();
     this.swirlRate = f();
     this.huddle = f();
     this.vaporFade = f();
@@ -760,7 +760,7 @@ export class Simulation {
     // Atmosphere (Gas B): how much is stirring it, and how chaotic a kick has left it.
     const atmo = mode.atmosphere * (1 - fw);
     let atmoLevel = 0;
-    let bandFlow = 0;
+    let gather = 0;
     let swirlAmp = 0;
     let eddyAmp = 0;
     if (atmo) {
@@ -771,30 +771,29 @@ export class Simulation {
       this.stir *= Math.exp(-1 / 60 / ATMO_STIR_FADE);
       if (over)
         this.stir = Math.max(this.stir, Math.min(1, Math.hypot(pointer.vx, pointer.vy) / ATMO_STIR_SPEED));
-      const activity = this.atmoActivity(slider);
-      atmoLevel = atmo * activity * lerp(ATMO_TIGHT, 1, slider);
-      this.atmoTime += 1 + 2 * this.turbulence;
+      atmoLevel = atmo * this.atmoActivity(slider) * lerp(ATMO_TIGHT, 1, slider);
+      // Slow, quicker with sound; a kick's turbulence churns faster still.
+      this.atmoTime += 1 + ATMO_SOUND_PACE * this.sound + 2 * this.turbulence;
       const calm = 1 / (1 + 2 * this.turbulence);
-      bandFlow = ATMO_BAND_SPEED * scale * calm;
+      gather = ATMO_GATHER * scale * calm;
       swirlAmp = (ATMO_SWIRL_SPEED * scale) / ATMO_SWIRL_WAVES;
       eddyAmp = (ATMO_EDDY_SPEED * scale * Math.min(1, this.turbulence)) / ATMO_SWIRL_WAVES;
     }
-    // Unwinding the bands' shear: full speed when nothing stirs (or in another mode), none when fully stirred.
-    const unwindFull = 1 - Math.exp(-1 / 60 / ATMO_UNWIND);
-    const unwind = unwindFull * Math.max(0, 1 - (atmo ? this.atmoActivity(slider) : 0) / ATMO_UNWIND_BELOW);
-    // Each step back toward 0 by a share of what's left, but never slower than a half turn in ATMO_UNWIND_MIN s.
-    const unwound = (angle: number, share: number): number => {
-      if (!share || !angle) return angle;
-      const back = Math.min(
-        Math.abs(angle),
-        Math.max(Math.abs(angle) * share, ((Math.PI / (60 * ATMO_UNWIND_MIN)) * share) / unwindFull),
-      );
-      return angle - Math.sign(angle) * back;
-    };
     const swirlK = (2 * Math.PI) / (re * ATMO_SWIRL_LENGTH);
     const eddyK = (2 * Math.PI) / (re * ATMO_EDDY_LENGTH);
     const waves = this.swirlWaves;
     const atmoT = this.atmoTime;
+    // The rings' slow wander: their phase, and the phases of the waves that bend them.
+    const bandPhase = (2 * Math.PI * atmoT) / (60 * ATMO_BAND_PERIOD);
+    this.bandDepth +=
+      (ATMO_BAND_DEPTH * atmoLevel - this.bandDepth) * (1 - Math.exp(-1 / 60 / ATMO_BAND_EASE));
+    const bandDepth = this.bandDepth > 1e-4 ? this.bandDepth : 0;
+    const twoPiN = 2 * Math.PI * ATMO_BANDS;
+    // How far a home at `lane` moves toward its ring's crest (in lanes), and the rings' slow bend round the circle.
+    const toCrest = (lane: number): number => (-Math.sin(twoPiN * lane - bandPhase) / twoPiN) * bandDepth;
+    const ringBend = (angle: number): number =>
+      ATMO_BAND_WARP * Math.sin(2 * angle + bandPhase * 1.3) +
+      ATMO_BAND_WARP * 0.6 * Math.sin(3 * angle - bandPhase * 0.7 + 1);
     const sweepVapor =
       mode.vapor *
       (1 - fw) *
@@ -889,66 +888,28 @@ export class Simulation {
 
       // Home: the (swirling) disc point blended toward the rotating sphere point, loosened by the scatter.
       if (swirl) this.discTurn[i] += swirl * this.swirlRate[i];
-      if (atmoLevel) {
-        // The bands carry the homes themselves (as spin does), so the springs take particles along
-        // with the flow instead of holding them back. Each home turns with the band its particle is in
-        // (loose particles sit well off their homes, and the bands alternate): round the centre by
-        // ring, round the axis by latitude.
-        const px = x[i] - cx;
-        const py = y[i] - cy;
-        const pz = z[i];
-        const pr = Math.hypot(px, py) / re;
-        this.atmoTurn[i] += Math.max(
-          -ATMO_TURN_MAX,
-          Math.min(
-            ATMO_TURN_MAX,
-            (bandFlow * atmoLevel * Math.sin(2 * Math.PI * ATMO_BANDS * pr)) / (Math.max(pr, 0.05) * re),
-          ),
-        );
-        const lat =
-          (px * GLOBE_AXIS[0] + py * GLOBE_AXIS[1] + pz * GLOBE_AXIS[2]) / (Math.hypot(px, py, pz) || 1);
-        const ring = Math.sqrt(Math.max(0.0025, 1 - lat * lat));
-        this.globeTurn[i] += Math.max(
-          -ATMO_TURN_MAX,
-          Math.min(
-            ATMO_TURN_MAX,
-            (bandFlow * atmoLevel * Math.sin(2 * Math.PI * ATMO_BANDS * ((lat + 1) / 2))) / (ring * re),
-          ),
-        );
-        if (this.globeTurn[i] > Math.PI) this.globeTurn[i] -= 2 * Math.PI;
-        else if (this.globeTurn[i] < -Math.PI) this.globeTurn[i] += 2 * Math.PI;
-      }
       if (this.discTurn[i] > Math.PI) this.discTurn[i] -= 2 * Math.PI;
       else if (this.discTurn[i] < -Math.PI) this.discTurn[i] += 2 * Math.PI;
-      // The bands' shear unwinds as the stirring dies away (each the short way round).
-      let at = this.atmoTurn[i];
-      if (at > Math.PI) at -= 2 * Math.PI;
-      else if (at < -Math.PI) at += 2 * Math.PI;
-      this.atmoTurn[i] = unwound(at, unwind);
-      let gt0 = this.globeTurn[i];
-      if (gt0 > Math.PI) gt0 -= 2 * Math.PI;
-      else if (gt0 < -Math.PI) gt0 += 2 * Math.PI;
-      this.globeTurn[i] = unwound(gt0, unwind);
-      const turnCos = Math.cos(this.discTurn[i] + this.atmoTurn[i] + this.nudge);
-      const turnSin = Math.sin(this.discTurn[i] + this.atmoTurn[i] + this.nudge);
+      const turnCos = Math.cos(this.discTurn[i] + this.nudge);
+      const turnSin = Math.sin(this.discTurn[i] + this.nudge);
       const dhx = (this.discX[i] * turnCos - this.discY[i] * turnSin) * re;
       const dhy = (this.discX[i] * turnSin + this.discY[i] * turnCos) * re;
       let sx = this.sphereX[i];
       let sy = this.sphereY[i];
       let sz = this.sphereZ[i];
-      const gt = this.globeTurn[i];
-      if (gt) {
-        // Turned about the globe axis by its band (Rodrigues).
+      if (bandDepth) {
+        // Atmosphere: the home gathers toward its ring's crest (disc: in or out; globe: along its meridian).
         const [ka, kb, kc] = GLOBE_AXIS;
-        const c = Math.cos(gt);
-        const sn = Math.sin(gt);
-        const dot = (ka * sx + kb * sy + kc * sz) * (1 - c);
-        const rx = sx * c + (kb * sz - kc * sy) * sn + ka * dot;
-        const ry = sy * c + (kc * sx - ka * sz) * sn + kb * dot;
-        const rz = sz * c + (ka * sy - kb * sx) * sn + kc * dot;
-        sx = rx;
-        sy = ry;
-        sz = rz;
+        const lat = ka * sx + kb * sy + kc * sz;
+        const nlat = Math.max(
+          -0.999,
+          Math.min(0.999, lat + 2 * toCrest((lat + 1) / 2 + ringBend(Math.atan2(sy, sx)))),
+        );
+        const ring = Math.sqrt(Math.max(1e-6, 1 - lat * lat));
+        const f = Math.sqrt(1 - nlat * nlat) / ring;
+        sx = (sx - ka * lat) * f + ka * nlat;
+        sy = (sy - kb * lat) * f + kb * nlat;
+        sz = (sz - kc * lat) * f + kc * nlat;
       }
       const shx = (M[0] * sx + M[1] * sy + M[2] * sz) * re;
       const shy = (M[3] * sx + M[4] * sy + M[5] * sz) * re;
@@ -961,6 +922,17 @@ export class Simulation {
       let hx = cx + dhx + (shx - dhx) * gw + sdx * scatter;
       let hy = cy + dhy + (shy - dhy) * gw + sdy * scatter;
       let hz = shz * gw + this.scatterZ[i] * scatter * gw;
+      if (bandDepth && gw < 1) {
+        // The disc home (scatter and all, or loose clouds blur the rings away) gathers in or out to its crest.
+        const rx = hx - cx;
+        const ry = hy - cy;
+        const rh = Math.hypot(rx, ry) / re;
+        if (rh > 1e-3) {
+          const grow = 1 + (toCrest(rh + ringBend(Math.atan2(ry, rx))) / rh) * (1 - gw);
+          hx = cx + rx * grow;
+          hy = cy + ry * grow;
+        }
+      }
       if (breath) {
         // Gas: out along the home's own direction, more the further out it sits (a dense core stays).
         const ux = this.discX[i] + (this.sphereX[i] - this.discX[i]) * gw;
@@ -1127,22 +1099,32 @@ export class Simulation {
         }
       }
       if (atmoLevel) {
-        // The atmosphere's flow here: bands round the centre (latitudes on the globe), a slow swirl and
-        // a kick's eddies (both from a stream function, so they stir without squeezing). Eased toward.
+        // The atmosphere's flow here: a drift across the rings toward their crests (so the smoke gathers
+        // into them), a gentle swirl and a kick's eddies (both from a stream function, so they stir without
+        // squeezing). Eased toward. The rings are by distance (disc) or latitude (globe), bent round the
+        // circle by two slow waves.
         const od = Math.hypot(ox, oy) || 1;
-        // Bands: tangential, alternating with distance (disc) or latitude (globe).
-        const lat =
-          (ox * GLOBE_AXIS[0] + oy * GLOBE_AXIS[1] + oz * GLOBE_AXIS[2]) / (Math.hypot(ox, oy, oz) || 1);
-        const lane = lerp(od / re, (lat + 1) / 2, gw);
-        const band = bandFlow * Math.sin(2 * Math.PI * ATMO_BANDS * lane);
-        // Disc: round the centre. Globe: round the axis (axis × position, its screen part).
-        const gx = GLOBE_AXIS[1] * oz - GLOBE_AXIS[2] * oy;
-        const gy = GLOBE_AXIS[2] * ox - GLOBE_AXIS[0] * oz;
-        const gz = GLOBE_AXIS[0] * oy - GLOBE_AXIS[1] * ox;
-        const gl = Math.hypot(gx, gy, gz) || 1;
-        let fx = lerp(-oy / od, gx / gl, gw) * band;
-        let fy = lerp(ox / od, gy / gl, gw) * band;
-        const fz = (gz / gl) * band * gw;
+        const o3 = Math.hypot(ox, oy, oz) || 1;
+        const lat = (ox * GLOBE_AXIS[0] + oy * GLOBE_AXIS[1] + oz * GLOBE_AXIS[2]) / o3;
+        const angle = Math.atan2(oy, ox);
+        const lane = lerp(od / re, (lat + 1) / 2, gw) + ringBend(angle);
+        const across = -gather * Math.sin(2 * Math.PI * ATMO_BANDS * lane - bandPhase);
+        // Across the rings: outward (disc), or toward the north along the meridian (globe).
+        let nx = ox / od;
+        let ny = oy / od;
+        let nz = 0;
+        if (gw > 0) {
+          const mx = GLOBE_AXIS[0] - (lat * ox) / o3;
+          const my = GLOBE_AXIS[1] - (lat * oy) / o3;
+          const mz = GLOBE_AXIS[2] - (lat * oz) / o3;
+          const ml = Math.hypot(mx, my, mz) || 1;
+          nx = lerp(nx, mx / ml, gw);
+          ny = lerp(ny, my / ml, gw);
+          nz = (mz / ml) * gw;
+        }
+        let fx = nx * across;
+        let fy = ny * across;
+        const fz = nz * across;
         for (let w = 0; w < waves.length; w++) {
           const wave = waves[w];
           const eddy = w >= ATMO_SWIRL_WAVES;

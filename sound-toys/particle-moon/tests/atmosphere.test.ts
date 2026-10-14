@@ -17,18 +17,17 @@ function gasB(state: number, sound: number): Simulation {
   return sim;
 }
 
-/** How far motion round the centre follows the rings (their alternating directions), px/step. */
-function bandFollow(sim: Simulation): number {
+/** Ring contrast: how unevenly the particles sit across thin rings (std / mean of density), 0 = even. */
+function ringContrast(sim: Simulation): number {
   const re = sim.effectiveRadius();
-  const { vx, vy } = sim as unknown as { vx: Float32Array; vy: Float32Array };
-  let f = 0;
+  const bins = new Array(24).fill(0) as number[];
   for (let i = 0; i < sim.count; i++) {
-    const ox = sim.x[i] - CX;
-    const oy = sim.y[i] - CY;
-    const r = Math.hypot(ox, oy) || 1;
-    f += ((vx[i] * -oy + vy[i] * ox) / r) * Math.sin(2 * Math.PI * 2 * (r / re));
+    const r = Math.hypot(sim.x[i] - CX, sim.y[i] - CY) / (re * 1.1);
+    if (r < 1) bins[Math.floor(r * 24)]++;
   }
-  return f / sim.count;
+  const dens = bins.map((n, k) => n / ((k + 1) ** 2 - k ** 2)).slice(2, 22);
+  const mean = dens.reduce((a, b) => a + b, 0) / dens.length;
+  return Math.sqrt(dens.reduce((a, b) => a + (b - mean) ** 2, 0) / dens.length) / mean;
 }
 
 /** Mean distance the particles travel over `seconds`. */
@@ -47,7 +46,8 @@ it('Gas B with no sound: still at Tight, drifting like smoke toward Loose', () =
   expect(travel(tight, 3)).toBeLessThan(0.05);
   const loose = gasB(0.9, 0);
   travel(loose, 6);
-  expect(travel(loose, 3)).toBeGreaterThan(5);
+  // A slow, steady drift: a pixel or more a second.
+  expect(travel(loose, 3)).toBeGreaterThan(2);
 });
 
 it('Gas B: after the music stops, a Tight disc packs back into a solid circle', () => {
@@ -73,21 +73,31 @@ it('Gas B: after the music stops, a Tight disc packs back into a solid circle', 
   expect(open).toBeLessThan(10);
 });
 
-it('Gas B: sound stirs it into rings drifting in alternating directions; Tight resists', () => {
+it('Gas B: sound gathers loose smoke into rings, slowly; Tight resists', () => {
   const loose = gasB(0.9, 0.6);
-  const moved = travel(loose, 8);
-  expect(bandFollow(loose)).toBeGreaterThan(0.15);
+  const start = ringContrast(loose);
+  travel(loose, 3);
+  const early = ringContrast(loose);
+  travel(loose, 20);
+  // Gas A's cloud measures ~0.1 here; the rings take many seconds to form.
+  expect(ringContrast(loose)).toBeGreaterThan(Math.max(0.25, early));
+  expect(early).toBeLessThan(start + 0.15);
+  // Tight shows no more rings than Gas A's (its own edge ring already reads as some contrast).
   const tight = gasB(0.1, 0.6);
-  expect(travel(tight, 8)).toBeLessThan(moved * 0.5);
+  const tightA = gasB(0.1, 0.6);
+  tightA.mode = PHYSICS_MODES.gas;
+  travel(tight, 20);
+  travel(tightA, 20);
+  expect(ringContrast(tight)).toBeLessThan(ringContrast(tightA) + 0.05);
 });
 
-it('Gas B: a kick shatters the rings, and they settle back', () => {
+it('Gas B: a kick churns it, then it calms', () => {
   const sim = gasB(0.9, 0.6);
   travel(sim, 6);
-  const before = bandFollow(sim);
+  const calm = travel(sim, 0.5);
   sim.fire(1);
-  travel(sim, 0.2);
-  expect(bandFollow(sim)).toBeLessThan(before * 0.6);
-  travel(sim, 2);
-  expect(bandFollow(sim)).toBeGreaterThan(before * 0.75);
+  const churned = travel(sim, 0.5);
+  expect(churned).toBeGreaterThan(calm * 1.3);
+  travel(sim, 3);
+  expect(travel(sim, 0.5)).toBeLessThan(churned);
 });
