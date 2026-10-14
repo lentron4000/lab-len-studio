@@ -26,7 +26,7 @@ function bandFollow(sim: Simulation): number {
     const ox = sim.x[i] - CX;
     const oy = sim.y[i] - CY;
     const r = Math.hypot(ox, oy) || 1;
-    f += ((vx[i] * -oy + vy[i] * ox) / r) * Math.sin(2 * Math.PI * 2.5 * (r / re));
+    f += ((vx[i] * -oy + vy[i] * ox) / r) * Math.sin(2 * Math.PI * 2 * (r / re));
   }
   return f / sim.count;
 }
@@ -41,13 +41,36 @@ function travel(sim: Simulation, seconds: number): number {
   return d / sim.count;
 }
 
-it('Gas B is still and round with no sound', () => {
-  for (const state of [0, 0.9]) {
-    const sim = gasB(state, 0);
-    travel(sim, 6); // the starting layout relaxes, then nothing moves
-    // (A loose cloud keeps easing apart by a fraction of a pixel for a while; invisible.)
-    expect(travel(sim, 3), `state ${state}`).toBeLessThan(0.3);
+it('Gas B with no sound: still at Tight, drifting like smoke toward Loose', () => {
+  const tight = gasB(0, 0);
+  travel(tight, 6);
+  expect(travel(tight, 3)).toBeLessThan(0.05);
+  const loose = gasB(0.9, 0);
+  travel(loose, 6);
+  expect(travel(loose, 3)).toBeGreaterThan(5);
+});
+
+it('Gas B: after the music stops, a Tight disc packs back into a solid circle', () => {
+  const sim = gasB(0, 0);
+  sim.setViewport({ width: 1440, height: 900, radius: 200, cx: CX, cy: CY }, true);
+  sim.sound = 0.7;
+  for (let s = 0; s < 10 * 60; s++) {
+    if (s % 36 === 0) sim.fire(1);
+    sim.step();
   }
+  sim.sound = 0;
+  travel(sim, 6);
+  const r = sim.dotRadius();
+  let open = 0;
+  for (let py = CY - 190; py <= CY + 190; py += 2)
+    for (let px = CX - 190; px <= CX + 190; px += 2) {
+      if (Math.hypot(px - CX, py - CY) > 190) continue;
+      let hit = false;
+      for (let i = 0; i < sim.count && !hit; i++) hit = (sim.x[i] - px) ** 2 + (sim.y[i] - py) ** 2 < r * r;
+      if (!hit) open++;
+    }
+  // The rings' shear used to leave it full of holes (thousands of open pixels).
+  expect(open).toBeLessThan(10);
 });
 
 it('Gas B: sound stirs it into rings drifting in alternating directions; Tight resists', () => {

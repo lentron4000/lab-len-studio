@@ -119,12 +119,12 @@ const SILENT_Z_DAMPING = 0.8;
  * pull). Each flow is a velocity the particles are eased toward (ATMO_GRIP per step), so it never runs
  * away. Speeds are px/step at the reference radius.
  */
-const ATMO_BANDS = 2.5;
-const ATMO_BAND_SPEED = 0.9;
+const ATMO_BANDS = 2;
+const ATMO_BAND_SPEED = 2;
 /** The swirl: waves of a stream function (it stirs without squeezing), their wavelength in shape radii, speed and drift. */
 const ATMO_SWIRL_WAVES = 3;
-const ATMO_SWIRL_LENGTH = 1.3;
-const ATMO_SWIRL_SPEED = 0.9;
+const ATMO_SWIRL_LENGTH = 0.7;
+const ATMO_SWIRL_SPEED = 1.6;
 const ATMO_SWIRL_DRIFT = 0.006;
 /** A kick's turbulence: smaller, faster eddies that take over from the bands, settling over ATMO_SETTLE_BEATS. */
 const ATMO_EDDY_LENGTH = 0.45;
@@ -133,6 +133,15 @@ const ATMO_EDDY_DRIFT = 0.03;
 const ATMO_KICK = 0.9;
 const ATMO_SETTLE_BEATS = 2;
 const ATMO_GRIP = 0.035;
+/** Smoke drifts on its own toward Loose: stir rising from none at Tight to this much at the loosest. */
+const ATMO_AMBIENT = 0.4;
+/**
+ * Once the stirring has almost died away (below ATMO_UNWIND_BELOW), the bands' shear unwinds over
+ * ATMO_UNWIND seconds, so a still Tight disc packs solid again. (Unwinding any sooner stalls the bands.)
+ */
+const ATMO_UNWIND = 1.5;
+const ATMO_UNWIND_BELOW = 0.25;
+const ATMO_UNWIND_MIN = 1.5;
 /** Fastest a home is turned by its band, radians per step (keeps the very centre from whirling). */
 const ATMO_TURN_MAX = 0.02;
 const ATMO_TIGHT = 0.2;
@@ -266,6 +275,8 @@ export class Simulation {
   private readonly discTurn: Float32Array;
   /** Atmosphere (Gas B): each sphere home's turn about the globe axis, carried by its latitude's band. */
   private readonly globeTurn: Float32Array;
+  /** Atmosphere: each disc home's turn round the centre, carried by its ring (kept apart from spin's). */
+  private readonly atmoTurn: Float32Array;
   private readonly swirlRate: Float32Array;
   /**
    * 0–1 per particle: how close it is to an attracting mouse. Those particles pack tighter and buzz
@@ -387,6 +398,7 @@ export class Simulation {
     this.vapor = f();
     this.discTurn = f();
     this.globeTurn = f();
+    this.atmoTurn = f();
     this.swirlRate = f();
     this.huddle = f();
     this.vaporFade = f();
@@ -425,6 +437,11 @@ export class Simulation {
       this.scatterY[i] = gaussian();
       this.scatterZ[i] = gaussian();
     }
+  }
+
+  /** Atmosphere: what is stirring it (0–1): sound, the pointer, a kick, and on its own toward Loose. */
+  private atmoActivity(slider: number): number {
+    return Math.min(1, this.sound + this.stir + this.turbulence + ATMO_AMBIENT * slider);
   }
 
   /** The State slider as this mode uses it: capped at its loosest (see PhysicsMode.looseCap). */
@@ -630,7 +647,7 @@ export class Simulation {
       lerp(e, slider, mode.vapor) *
       scale *
       (1 - fw) *
-      lerp(1, Math.min(1, this.sound + this.stir + this.turbulence), mode.atmosphere);
+      lerp(1, this.atmoActivity(slider), mode.atmosphere);
     const damping = lerp(lerp(SOLID.damping, mode.damping, e), 0.9, fw) * (1 - 0.1 * gassy);
     const formR = re * FORMATION_SCALE * (1 + 0.3 * burn);
     const thermal =
@@ -754,7 +771,7 @@ export class Simulation {
       this.stir *= Math.exp(-1 / 60 / ATMO_STIR_FADE);
       if (over)
         this.stir = Math.max(this.stir, Math.min(1, Math.hypot(pointer.vx, pointer.vy) / ATMO_STIR_SPEED));
-      const activity = Math.min(1, this.sound + this.stir + this.turbulence);
+      const activity = this.atmoActivity(slider);
       atmoLevel = atmo * activity * lerp(ATMO_TIGHT, 1, slider);
       this.atmoTime += 1 + 2 * this.turbulence;
       const calm = 1 / (1 + 2 * this.turbulence);
@@ -762,6 +779,18 @@ export class Simulation {
       swirlAmp = (ATMO_SWIRL_SPEED * scale) / ATMO_SWIRL_WAVES;
       eddyAmp = (ATMO_EDDY_SPEED * scale * Math.min(1, this.turbulence)) / ATMO_SWIRL_WAVES;
     }
+    // Unwinding the bands' shear: full speed when nothing stirs (or in another mode), none when fully stirred.
+    const unwindFull = 1 - Math.exp(-1 / 60 / ATMO_UNWIND);
+    const unwind = unwindFull * Math.max(0, 1 - (atmo ? this.atmoActivity(slider) : 0) / ATMO_UNWIND_BELOW);
+    // Each step back toward 0 by a share of what's left, but never slower than a half turn in ATMO_UNWIND_MIN s.
+    const unwound = (angle: number, share: number): number => {
+      if (!share || !angle) return angle;
+      const back = Math.min(
+        Math.abs(angle),
+        Math.max(Math.abs(angle) * share, ((Math.PI / (60 * ATMO_UNWIND_MIN)) * share) / unwindFull),
+      );
+      return angle - Math.sign(angle) * back;
+    };
     const swirlK = (2 * Math.PI) / (re * ATMO_SWIRL_LENGTH);
     const eddyK = (2 * Math.PI) / (re * ATMO_EDDY_LENGTH);
     const waves = this.swirlWaves;
@@ -869,7 +898,7 @@ export class Simulation {
         const py = y[i] - cy;
         const pz = z[i];
         const pr = Math.hypot(px, py) / re;
-        this.discTurn[i] += Math.max(
+        this.atmoTurn[i] += Math.max(
           -ATMO_TURN_MAX,
           Math.min(
             ATMO_TURN_MAX,
@@ -891,8 +920,17 @@ export class Simulation {
       }
       if (this.discTurn[i] > Math.PI) this.discTurn[i] -= 2 * Math.PI;
       else if (this.discTurn[i] < -Math.PI) this.discTurn[i] += 2 * Math.PI;
-      const turnCos = Math.cos(this.discTurn[i] + this.nudge);
-      const turnSin = Math.sin(this.discTurn[i] + this.nudge);
+      // The bands' shear unwinds as the stirring dies away (each the short way round).
+      let at = this.atmoTurn[i];
+      if (at > Math.PI) at -= 2 * Math.PI;
+      else if (at < -Math.PI) at += 2 * Math.PI;
+      this.atmoTurn[i] = unwound(at, unwind);
+      let gt0 = this.globeTurn[i];
+      if (gt0 > Math.PI) gt0 -= 2 * Math.PI;
+      else if (gt0 < -Math.PI) gt0 += 2 * Math.PI;
+      this.globeTurn[i] = unwound(gt0, unwind);
+      const turnCos = Math.cos(this.discTurn[i] + this.atmoTurn[i] + this.nudge);
+      const turnSin = Math.sin(this.discTurn[i] + this.atmoTurn[i] + this.nudge);
       const dhx = (this.discX[i] * turnCos - this.discY[i] * turnSin) * re;
       const dhy = (this.discX[i] * turnSin + this.discY[i] * turnCos) * re;
       let sx = this.sphereX[i];
@@ -1129,8 +1167,9 @@ export class Simulation {
         ay += (fy - vy[i]) * ATMO_GRIP * atmoLevel;
         az += (fz - vz[i]) * ATMO_GRIP * atmoLevel;
       }
-      // (Gas B's thermostat also runs at a target of zero: unstirred, its molecules slow to a stop.)
-      if (targetSpeed || mode.atmosphere) {
+      // (Gas B's thermostat also runs at a target of zero: unstirred, its molecules slow to a stop. Not
+      // vapour, though, which would stall on its way home.)
+      if (targetSpeed || (mode.atmosphere && !v)) {
         // Thermostat: nudge each particle's speed toward the target so gas keeps flying straight.
         const sp = Math.hypot(vx[i], vy[i], vz[i] * gw);
         if (sp > 1e-3) {
