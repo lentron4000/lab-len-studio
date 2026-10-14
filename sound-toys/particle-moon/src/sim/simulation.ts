@@ -56,8 +56,7 @@ const HUDDLE_PACK = 0.33;
 const BREAK_ENERGY = 1.2;
 /** Pointer speed (px/step) at which fully tight fluid gives way completely (4 when loose). */
 const GIVE_SPEED_TIGHT = 24;
-/** Liquid: full-size body from this pointer speed (px/step); a cushion this many body radii wide pushing LIQUID_PUSH. */
-const LIQUID_FULL_SPEED = 0.6;
+/** Liquid: a cushion this many body radii wide round the (always solid) body, pushing LIQUID_PUSH. */
 const LIQUID_CUSHION = 1.7;
 const LIQUID_PUSH = 1.2;
 /** Pointer speed (px/step) at which the body reaches full size. */
@@ -595,8 +594,9 @@ export class Simulation {
     const body = Math.max(10, R * BODY_RADIUS);
     const body2 = body * body;
     // Its solid core only exists while it moves: still, it pushes nothing; full size at BODY_FULL_SPEED.
-    // Liquid is solid to it at any speed once it moves (it flows round, never through); gas only at speed.
-    const core = body * Math.min(1, pSpeed / (mode.ripple ? LIQUID_FULL_SPEED : BODY_FULL_SPEED));
+    // Liquid treats it as a solid object always, still or moving (it flows round, never through, and keeps
+    // a clear gap); gas only feels it at speed.
+    const core = mode.ripple ? body : body * Math.min(1, pSpeed / BODY_FULL_SPEED);
     const cushion = mode.ripple ? core * LIQUID_CUSHION : 0;
     const flowReach = body * 5;
     // Faster pointer, longer wake (shape radii, capped).
