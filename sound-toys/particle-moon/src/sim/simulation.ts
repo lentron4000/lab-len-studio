@@ -112,6 +112,32 @@ const SILENT_Z_DAMPING = 0.8;
  * bodily after the moon, kicks or spin (the moon alone sloshed it ±17% of the radius each orbit; now a few
  * percent). Off for held formations and the globe.
  */
+/**
+ * Atmosphere (Gas B): rings round the centre (latitudes on the globe) drift in alternating directions,
+ * and a slow swirl wanders through them. Nothing moves until something stirs it: sound, the pointer
+ * moving over the cloud (fading over ATMO_STIR_FADE s), or a kick. Tight resists (ATMO_TIGHT of the
+ * pull). Each flow is a velocity the particles are eased toward (ATMO_GRIP per step), so it never runs
+ * away. Speeds are px/step at the reference radius.
+ */
+const ATMO_BANDS = 2.5;
+const ATMO_BAND_SPEED = 0.9;
+/** The swirl: waves of a stream function (it stirs without squeezing), their wavelength in shape radii, speed and drift. */
+const ATMO_SWIRL_WAVES = 3;
+const ATMO_SWIRL_LENGTH = 1.3;
+const ATMO_SWIRL_SPEED = 0.9;
+const ATMO_SWIRL_DRIFT = 0.006;
+/** A kick's turbulence: smaller, faster eddies that take over from the bands, settling over ATMO_SETTLE_BEATS. */
+const ATMO_EDDY_LENGTH = 0.45;
+const ATMO_EDDY_SPEED = 2.6;
+const ATMO_EDDY_DRIFT = 0.03;
+const ATMO_KICK = 0.9;
+const ATMO_SETTLE_BEATS = 2;
+const ATMO_GRIP = 0.035;
+/** Fastest a home is turned by its band, radians per step (keeps the very centre from whirling). */
+const ATMO_TURN_MAX = 0.02;
+const ATMO_TIGHT = 0.2;
+const ATMO_STIR_SPEED = 10;
+const ATMO_STIR_FADE = 1.5;
 const CENTRE_SPRING = 0.04;
 const CENTRE_DAMPING = 0.35;
 /** Water: seconds for a kick's ripple to cross the shape, at Tight and at Loose; and rings alive at once. */
@@ -238,6 +264,8 @@ export class Simulation {
   readonly vapor: Float32Array;
   /** Disc swirl: each particle's turn so far about the centre, and its own rate (×spin). */
   private readonly discTurn: Float32Array;
+  /** Atmosphere (Gas B): each sphere home's turn about the globe axis, carried by its latitude's band. */
+  private readonly globeTurn: Float32Array;
   private readonly swirlRate: Float32Array;
   /**
    * 0–1 per particle: how close it is to an attracting mouse. Those particles pack tighter and buzz
@@ -308,6 +336,15 @@ export class Simulation {
   /** How open the kick has the shape right now; it rises over a few frames (attack) rather than at once. */
   private open = 0;
   /** Centroid of the particles in the shape, from the last step: offset from centre (px) and velocity. */
+  /** Atmosphere: how stirred the pointer has left it, kick turbulence (0–~1.5), and its clock. */
+  private stir = 0;
+  private turbulence = 0;
+  private atmoTime = 0;
+  private readonly swirlWaves = Array.from({ length: ATMO_SWIRL_WAVES * 2 }, (_, k) => ({
+    angle: Math.random() * Math.PI * 2,
+    phase: Math.random() * Math.PI * 2,
+    rate: (k % 2 ? -1 : 1) * (0.6 + 0.8 * Math.random()),
+  }));
   private driftX = 0;
   private driftY = 0;
   private driftVx = 0;
@@ -349,6 +386,7 @@ export class Simulation {
     this.excite = f();
     this.vapor = f();
     this.discTurn = f();
+    this.globeTurn = f();
     this.swirlRate = f();
     this.huddle = f();
     this.vaporFade = f();
@@ -586,7 +624,13 @@ export class Simulation {
     const kickOpen = slider < 1 ? Math.max(0, (e - slider) / (1 - slider)) : 0;
     // (Not during a blast: that should still fling it.)
     const gassy = Math.min(1, mode.vapor * kickOpen * (1 - fw) * (1 - blast) * this.rest);
-    const targetSpeed = mode.speed * lerp(e, slider, mode.vapor) * scale * (1 - fw);
+    // (Gas B is still until something stirs it: its molecules only fly when the atmosphere does.)
+    const targetSpeed =
+      mode.speed *
+      lerp(e, slider, mode.vapor) *
+      scale *
+      (1 - fw) *
+      lerp(1, Math.min(1, this.sound + this.stir + this.turbulence), mode.atmosphere);
     const damping = lerp(lerp(SOLID.damping, mode.damping, e), 0.9, fw) * (1 - 0.1 * gassy);
     const formR = re * FORMATION_SCALE * (1 + 0.3 * burn);
     const thermal =
@@ -696,6 +740,32 @@ export class Simulation {
 
     // Pointer: gravity scales with movement in the fluid modes; poles are always on.
     pointer.step();
+    // Atmosphere (Gas B): how much is stirring it, and how chaotic a kick has left it.
+    const atmo = mode.atmosphere * (1 - fw);
+    let atmoLevel = 0;
+    let bandFlow = 0;
+    let swirlAmp = 0;
+    let eddyAmp = 0;
+    if (atmo) {
+      const beat = 60 / (this.bpm || 120);
+      this.turbulence *= Math.exp(-1 / 60 / (beat * ATMO_SETTLE_BEATS));
+      if (drive) this.turbulence = Math.min(1.5, this.turbulence + drive * ATMO_KICK);
+      const over = pointer.active && Math.hypot(pointer.x - cx, pointer.y - cy) < re * 1.4;
+      this.stir *= Math.exp(-1 / 60 / ATMO_STIR_FADE);
+      if (over)
+        this.stir = Math.max(this.stir, Math.min(1, Math.hypot(pointer.vx, pointer.vy) / ATMO_STIR_SPEED));
+      const activity = Math.min(1, this.sound + this.stir + this.turbulence);
+      atmoLevel = atmo * activity * lerp(ATMO_TIGHT, 1, slider);
+      this.atmoTime += 1 + 2 * this.turbulence;
+      const calm = 1 / (1 + 2 * this.turbulence);
+      bandFlow = ATMO_BAND_SPEED * scale * calm;
+      swirlAmp = (ATMO_SWIRL_SPEED * scale) / ATMO_SWIRL_WAVES;
+      eddyAmp = (ATMO_EDDY_SPEED * scale * Math.min(1, this.turbulence)) / ATMO_SWIRL_WAVES;
+    }
+    const swirlK = (2 * Math.PI) / (re * ATMO_SWIRL_LENGTH);
+    const eddyK = (2 * Math.PI) / (re * ATMO_EDDY_LENGTH);
+    const waves = this.swirlWaves;
+    const atmoT = this.atmoTime;
     const sweepVapor =
       mode.vapor *
       (1 - fw) *
@@ -789,18 +859,59 @@ export class Simulation {
       }
 
       // Home: the (swirling) disc point blended toward the rotating sphere point, loosened by the scatter.
-      if (swirl) {
-        this.discTurn[i] += swirl * this.swirlRate[i];
-        if (this.discTurn[i] > Math.PI) this.discTurn[i] -= 2 * Math.PI;
-        else if (this.discTurn[i] < -Math.PI) this.discTurn[i] += 2 * Math.PI;
+      if (swirl) this.discTurn[i] += swirl * this.swirlRate[i];
+      if (atmoLevel) {
+        // The bands carry the homes themselves (as spin does), so the springs take particles along
+        // with the flow instead of holding them back. Each home turns with the band its particle is in
+        // (loose particles sit well off their homes, and the bands alternate): round the centre by
+        // ring, round the axis by latitude.
+        const px = x[i] - cx;
+        const py = y[i] - cy;
+        const pz = z[i];
+        const pr = Math.hypot(px, py) / re;
+        this.discTurn[i] += Math.max(
+          -ATMO_TURN_MAX,
+          Math.min(
+            ATMO_TURN_MAX,
+            (bandFlow * atmoLevel * Math.sin(2 * Math.PI * ATMO_BANDS * pr)) / (Math.max(pr, 0.05) * re),
+          ),
+        );
+        const lat =
+          (px * GLOBE_AXIS[0] + py * GLOBE_AXIS[1] + pz * GLOBE_AXIS[2]) / (Math.hypot(px, py, pz) || 1);
+        const ring = Math.sqrt(Math.max(0.0025, 1 - lat * lat));
+        this.globeTurn[i] += Math.max(
+          -ATMO_TURN_MAX,
+          Math.min(
+            ATMO_TURN_MAX,
+            (bandFlow * atmoLevel * Math.sin(2 * Math.PI * ATMO_BANDS * ((lat + 1) / 2))) / (ring * re),
+          ),
+        );
+        if (this.globeTurn[i] > Math.PI) this.globeTurn[i] -= 2 * Math.PI;
+        else if (this.globeTurn[i] < -Math.PI) this.globeTurn[i] += 2 * Math.PI;
       }
+      if (this.discTurn[i] > Math.PI) this.discTurn[i] -= 2 * Math.PI;
+      else if (this.discTurn[i] < -Math.PI) this.discTurn[i] += 2 * Math.PI;
       const turnCos = Math.cos(this.discTurn[i] + this.nudge);
       const turnSin = Math.sin(this.discTurn[i] + this.nudge);
       const dhx = (this.discX[i] * turnCos - this.discY[i] * turnSin) * re;
       const dhy = (this.discX[i] * turnSin + this.discY[i] * turnCos) * re;
-      const sx = this.sphereX[i];
-      const sy = this.sphereY[i];
-      const sz = this.sphereZ[i];
+      let sx = this.sphereX[i];
+      let sy = this.sphereY[i];
+      let sz = this.sphereZ[i];
+      const gt = this.globeTurn[i];
+      if (gt) {
+        // Turned about the globe axis by its band (Rodrigues).
+        const [ka, kb, kc] = GLOBE_AXIS;
+        const c = Math.cos(gt);
+        const sn = Math.sin(gt);
+        const dot = (ka * sx + kb * sy + kc * sz) * (1 - c);
+        const rx = sx * c + (kb * sz - kc * sy) * sn + ka * dot;
+        const ry = sy * c + (kc * sx - ka * sz) * sn + kb * dot;
+        const rz = sz * c + (ka * sy - kb * sx) * sn + kc * dot;
+        sx = rx;
+        sy = ry;
+        sz = rz;
+      }
       const shx = (M[0] * sx + M[1] * sy + M[2] * sz) * re;
       const shy = (M[3] * sx + M[4] * sy + M[5] * sz) * re;
       const shz = (M[6] * sx + M[7] * sy + M[8] * sz) * re;
@@ -977,7 +1088,49 @@ export class Simulation {
           }
         }
       }
-      if (targetSpeed) {
+      if (atmoLevel) {
+        // The atmosphere's flow here: bands round the centre (latitudes on the globe), a slow swirl and
+        // a kick's eddies (both from a stream function, so they stir without squeezing). Eased toward.
+        const od = Math.hypot(ox, oy) || 1;
+        // Bands: tangential, alternating with distance (disc) or latitude (globe).
+        const lat =
+          (ox * GLOBE_AXIS[0] + oy * GLOBE_AXIS[1] + oz * GLOBE_AXIS[2]) / (Math.hypot(ox, oy, oz) || 1);
+        const lane = lerp(od / re, (lat + 1) / 2, gw);
+        const band = bandFlow * Math.sin(2 * Math.PI * ATMO_BANDS * lane);
+        // Disc: round the centre. Globe: round the axis (axis × position, its screen part).
+        const gx = GLOBE_AXIS[1] * oz - GLOBE_AXIS[2] * oy;
+        const gy = GLOBE_AXIS[2] * ox - GLOBE_AXIS[0] * oz;
+        const gz = GLOBE_AXIS[0] * oy - GLOBE_AXIS[1] * ox;
+        const gl = Math.hypot(gx, gy, gz) || 1;
+        let fx = lerp(-oy / od, gx / gl, gw) * band;
+        let fy = lerp(ox / od, gy / gl, gw) * band;
+        const fz = (gz / gl) * band * gw;
+        for (let w = 0; w < waves.length; w++) {
+          const wave = waves[w];
+          const eddy = w >= ATMO_SWIRL_WAVES;
+          const k = eddy ? eddyK : swirlK;
+          const amp = eddy ? eddyAmp : swirlAmp;
+          if (!amp) continue;
+          const kx = Math.cos(wave.angle) * k;
+          const ky = Math.sin(wave.angle) * k;
+          const c =
+            amp *
+            Math.cos(
+              kx * ox +
+                ky * oy +
+                wave.phase +
+                wave.rate * atmoT * (eddy ? ATMO_EDDY_DRIFT : ATMO_SWIRL_DRIFT),
+            );
+          // Velocity from a stream function: (∂ψ/∂y, −∂ψ/∂x), normalised so amp is the speed.
+          fx += (c * ky) / k;
+          fy -= (c * kx) / k;
+        }
+        ax += (fx - vx[i]) * ATMO_GRIP * atmoLevel;
+        ay += (fy - vy[i]) * ATMO_GRIP * atmoLevel;
+        az += (fz - vz[i]) * ATMO_GRIP * atmoLevel;
+      }
+      // (Gas B's thermostat also runs at a target of zero: unstirred, its molecules slow to a stop.)
+      if (targetSpeed || mode.atmosphere) {
         // Thermostat: nudge each particle's speed toward the target so gas keeps flying straight.
         const sp = Math.hypot(vx[i], vy[i], vz[i] * gw);
         if (sp > 1e-3) {

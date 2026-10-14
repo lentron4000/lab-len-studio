@@ -1,7 +1,7 @@
 // Sound Toy — Copyright (c) 2026 Lenny Ford, Len Studio (https://len.studio)
 // SPDX-License-Identifier: MIT. If you use or adapt this, credit "Sound Toy by Lenny Ford (len.studio)".
 
-export type PhysicsModeId = 'gas' | 'water';
+export type PhysicsModeId = 'gas' | 'gasB' | 'water';
 
 /**
  * Behaviour at the fully open ("cloud") end of the State slider. The solid end is shared by all
@@ -52,6 +52,11 @@ export interface PhysicsMode {
   looseRange: number;
   /** Kicks travel out from the centre as a ripple instead of moving everything at once (0 or 1). */
   ripple: number;
+  /**
+   * Atmosphere (0–1): banded, swirling flow like Jupiter's, stirred by sound, the pointer and kicks
+   * (still when nothing stirs it; see the simulation's ATMO_ constants).
+   */
+  atmosphere: number;
   description: string;
 }
 
@@ -79,11 +84,39 @@ export const PHYSICS_MODES: Record<PhysicsModeId, PhysicsMode> = {
     range: 1.1,
     vapor: 1,
     ripple: 0,
+    atmosphere: 0,
     looseCap: 1,
     looseRange: 0.9,
     loosePointer: 1,
     description:
       'Air. Molecules fly in straight lines and bounce off each other. Sweep the pointer through to push a current; it diffuses back.',
+  },
+  gasB: {
+    spring: 0.006,
+    homeWeight: 0,
+    contain: 0.0018,
+    containRadius: 1.2,
+    shellInner: 0.78,
+    shellOuter: 1.22,
+    shellStrength: 0.006,
+    speed: 1.5,
+    damping: 0.999,
+    thermal: 0.06,
+    jitter: 0.35,
+    pointerGravity: 2600,
+    pointerWake: 0.12,
+    repulsion: 0.45,
+    cohesion: 0,
+    viscosity: 0,
+    range: 1.1,
+    vapor: 1,
+    ripple: 0,
+    atmosphere: 1,
+    looseCap: 1,
+    looseRange: 0.9,
+    loosePointer: 1,
+    description:
+      'Gas B: an atmosphere. Banded rings drift in opposite directions and slow currents swirl through them. Music or the pointer stirs it, a kick shatters the bands into eddies, and Tight resists.',
   },
   water: {
     spring: 0.006,
@@ -105,6 +138,7 @@ export const PHYSICS_MODES: Record<PhysicsModeId, PhysicsMode> = {
     range: 2,
     vapor: 0,
     ripple: 1,
+    atmosphere: 0,
     looseCap: 0.75,
     looseRange: 1,
     loosePointer: 0.35,
