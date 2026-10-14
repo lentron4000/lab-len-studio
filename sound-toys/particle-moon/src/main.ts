@@ -312,6 +312,8 @@ class App implements ControlHost {
       // Nothing moves under its own physics until the shape has bloomed.
       this.accumulator = 0;
       if (this.bloom) this.advanceBloom(now);
+      // The bloom places particles itself: nothing to draw between.
+      this.sim.settle();
     }
     while (this.accumulator >= STEP_MS && steps < MAX_STEPS_PER_FRAME) {
       ke = this.sim.step();
@@ -321,7 +323,8 @@ class App implements ControlHost {
     if (steps === MAX_STEPS_PER_FRAME) this.accumulator = 0; // fell behind: drop time rather than spiral
     if (steps) this.energy = this.energy * 0.9 + ke * 0.1;
 
-    const dot = this.renderer.draw();
+    // Drawn between the last two steps, by how far into the next one this frame falls.
+    const dot = this.renderer.draw(Math.min(1, this.accumulator / STEP_MS), dtMs / STEP_MS);
     if ((this.frameCount++ & 7) === 0) {
       const re = this.sim.effectiveRadius();
       this.readouts.rho.textContent = Math.min(1, (this.sim.count * dot * dot) / (re * re)).toFixed(2);

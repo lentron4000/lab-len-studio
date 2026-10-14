@@ -215,6 +215,10 @@ export class Simulation {
   readonly x: Float32Array;
   readonly y: Float32Array;
   readonly z: Float32Array;
+  /** Positions before the last step, so a frame landing between steps can be drawn between them. */
+  readonly prevX: Float32Array;
+  readonly prevY: Float32Array;
+  readonly prevZ: Float32Array;
   /** Home position on the unit sphere; also used to lay colour out in regions. */
   readonly sphereX: Float32Array;
   readonly sphereY: Float32Array;
@@ -321,6 +325,9 @@ export class Simulation {
     this.x = f();
     this.y = f();
     this.z = f();
+    this.prevX = f();
+    this.prevY = f();
+    this.prevZ = f();
     this.vx = f();
     this.vy = f();
     this.vz = f();
@@ -412,6 +419,14 @@ export class Simulation {
       this.z[i] = 0;
       this.vx[i] = this.vy[i] = this.vz[i] = 0;
     }
+    this.settle();
+  }
+
+  /** Marks the current positions as where the particles were and are (after a jump, nothing in between). */
+  settle(): void {
+    this.prevX.set(this.x);
+    this.prevY.set(this.y);
+    this.prevZ.set(this.z);
   }
 
   /**
@@ -468,6 +483,7 @@ export class Simulation {
   /** Advances one 1/60 s step. Returns mean kinetic energy (px²/step²) for the readout. */
   step(): number {
     this.steps++;
+    this.settle();
     const { mode, moon, pointer, count: N, x, y, z, vx, vy, vz } = this;
     // The State slider, capped at the mode's loosest (water stops at 75%).
     const slider = this.slider;

@@ -85,6 +85,14 @@ export class Renderer {
   private readonly velX: Float32Array;
   private readonly velY: Float32Array;
   private streakFrames = 0;
+  /** This frame's positions, between the last two simulation steps (see draw). */
+  private readonly drawX: Float32Array;
+  private readonly drawY: Float32Array;
+  private readonly drawZ: Float32Array;
+  /** How far this frame lies between the last two steps (0–1), for the moon. */
+  private blend = 1;
+  /** Simulation steps' worth of time this frame covers, so streaks measure motion per step. */
+  private frameSteps = 1;
   /** Day: streaking particles in a band, stroked after the dots. */
   private readonly streakI: Int32Array;
   private readonly streakX: Float32Array;
@@ -116,6 +124,9 @@ export class Renderer {
     this.lastY = new Float32Array(sim.count);
     this.velX = new Float32Array(sim.count);
     this.velY = new Float32Array(sim.count);
+    this.drawX = new Float32Array(sim.count);
+    this.drawY = new Float32Array(sim.count);
+    this.drawZ = new Float32Array(sim.count);
     this.streakI = new Int32Array(sim.count);
     this.streakX = new Float32Array(sim.count);
     this.streakY = new Float32Array(sim.count);
@@ -140,12 +151,26 @@ export class Renderer {
     this.tracers.tick(dt, 0);
   }
 
-  /** Draws a frame. Returns the dot radius, which the readout uses for its density figure. */
-  draw(): number {
+  /**
+   * Draws a frame. Returns the dot radius, which the readout uses for its density figure.
+   * @param blend where this frame falls between the last two simulation steps (0 = the one before, 1 = the
+   *   latest). The display rarely refreshes in step with the simulation (120 Hz screens, frame jitter), and
+   *   drawing only whole steps makes everything judder: a flickering double behind each particle.
+   * @param frameSteps simulation steps' worth of time since the last frame
+   */
+  draw(blend = 1, frameSteps = 1): number {
     const { ctx, sim, look } = this;
     const glow = look !== 'day';
     const ritual = look === 'ritual';
-    const { x, y, z, count: N, moon, vaporFade: fade, huddle } = sim;
+    const { count: N, moon, vaporFade: fade, huddle } = sim;
+    this.blend = blend;
+    this.frameSteps = Math.max(0.25, frameSteps);
+    const { drawX: x, drawY: y, drawZ: z } = this;
+    for (let i = 0; i < N; i++) {
+      x[i] = sim.prevX[i] + (sim.x[i] - sim.prevX[i]) * blend;
+      y[i] = sim.prevY[i] + (sim.y[i] - sim.prevY[i]) * blend;
+      z[i] = sim.prevZ[i] + (sim.z[i] - sim.prevZ[i]) * blend;
+    }
     const { radius: R, cx, cy } = sim.viewport;
     const sprites = this.sprites[ritual ? 'ritual' : 'night'];
 
@@ -338,11 +363,12 @@ export class Renderer {
     return dot;
   }
 
-  /** Records particle i's screen position and updates its smoothed screen velocity (px/frame). */
+  /** Records particle i's screen position and updates its smoothed screen velocity (px per simulation step). */
   private track(i: number, qx: number, qy: number): void {
     if (this.streakFrames > 1) {
-      this.velX[i] += (qx - this.lastX[i] - this.velX[i]) * 0.4;
-      this.velY[i] += (qy - this.lastY[i] - this.velY[i]) * 0.4;
+      const per = 1 / this.frameSteps;
+      this.velX[i] += ((qx - this.lastX[i]) * per - this.velX[i]) * 0.4;
+      this.velY[i] += ((qy - this.lastY[i]) * per - this.velY[i]) * 0.4;
     }
     this.lastX[i] = qx;
     this.lastY[i] = qy;
@@ -371,9 +397,10 @@ export class Renderer {
 
   /** Depth bands by z (far side lighter), split at the moon's depth for correct occlusion. */
   private sortIntoBands(re: number): void {
-    const { z, moon } = this.sim;
+    const { moon } = this.sim;
+    const z = this.drawZ;
     const count = Math.min(this.sim.count, this.limit);
-    const cut = moon.visible ? moon.z : Infinity;
+    const cut = moon.visible ? moon.z - moon.vz * (1 - this.blend) : Infinity;
     const hidden = this.hidden;
     this.bandSize.fill(0);
     for (let i = 0; i < count; i++) {
@@ -393,9 +420,11 @@ export class Renderer {
     const { ctx } = this;
     const { moon } = this.sim;
     const { cx, cy } = this.sim.viewport;
-    const ps = camera / (camera - moon.z);
-    const mx = cx + (moon.x - cx) * ps;
-    const my = cy + (moon.y - cy) * ps;
+    // Between steps, like the particles.
+    const back = 1 - this.blend;
+    const ps = camera / (camera - (moon.z - moon.vz * back));
+    const mx = cx + (moon.x - moon.vx * back - cx) * ps;
+    const my = cy + (moon.y - moon.vy * back - cy) * ps;
     const mr = moon.radius * ps;
     ctx.save();
     ctx.globalAlpha = 1;
