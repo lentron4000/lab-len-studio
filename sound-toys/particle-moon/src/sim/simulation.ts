@@ -138,20 +138,11 @@ const BOND_PULL = 0.3;
 const BOND_GAP = 0.5;
 /** Repel: each zap clears a hole this many spacings across (radius) round its middle. */
 const BOND_SCATTER = 3;
-/** The zap: share of a bond's life easing in, held until (the rest is the elastic release), and its glow. */
-const BOND_ATTACK = 0.15;
+/** The zap: share of a bond's life spent snapping in, held until, release time (shares of life), glow. */
+const BOND_ATTACK = 0.06;
 const BOND_HOLD = 0.6;
+const BOND_RELEASE = 0.15;
 const BOND_FLASH = 0.8;
-/**
- * A zap's strength over its life (t 0–1): an exponential ease-in to the snap, a hold, then an elastic
- * release that overshoots past zero (briefly reversing) and settles.
- */
-function zapEnvelope(t: number): number {
-  if (t < BOND_ATTACK) return 2 ** (10 * (t / BOND_ATTACK - 1)) * (t > 0 ? 1 : 0);
-  if (t < BOND_HOLD) return 1;
-  const u = Math.min(1, (t - BOND_HOLD) / (1 - BOND_HOLD));
-  return -(2 ** (-10 * u)) * Math.sin(((u * 10 - 0.75) * 2 * Math.PI) / 3);
-}
 /** 0 below a, 1 above b, smooth in between. */
 function smooth(a: number, b: number, v: number): number {
   const t = Math.min(1, Math.max(0, (v - a) / (b - a)));
@@ -1060,7 +1051,8 @@ export class Simulation {
           const d2 = dx * dx + dy * dy + dz * dz;
           if (d2 >= bondRest * bondRest) continue;
           const t = b.age / b.life;
-          const env = zapEnvelope(t);
+          const env =
+            t < BOND_ATTACK ? t / BOND_ATTACK : t < BOND_HOLD ? 1 : Math.exp(-(t - BOND_HOLD) / BOND_RELEASE);
           const d = Math.sqrt(d2) || 1;
           const push = bondPull * env * (bondRest - d);
           ax += (dx / d) * push;
@@ -1071,7 +1063,9 @@ export class Simulation {
       } else if (bond >= 0 && bondPull) {
         const b = this.bonds[bond];
         const t = b.age / b.life;
-        const env = zapEnvelope(t);
+        // A zap: snaps in over the first BOND_ATTACK of its life, holds briefly, then lets go.
+        const env =
+          t < BOND_ATTACK ? t / BOND_ATTACK : t < BOND_HOLD ? 1 : Math.exp(-(t - BOND_HOLD) / BOND_RELEASE);
         if (t < BOND_ATTACK && this.excite[i] < env * BOND_FLASH) this.excite[i] = env * BOND_FLASH;
         const dx = b.cx - x[i];
         const dy = b.cy - y[i];
@@ -1127,7 +1121,7 @@ export class Simulation {
     }
     if (!on) return 0;
     if (--this.nextBond <= 0 && this.bonds.length < BOND_MAX) {
-      this.nextBond = Math.round(60 * (0.4 + Math.random() * 1));
+      this.nextBond = Math.round(60 * (0.2 + Math.random() * 0.5));
       const seed = (Math.random() * n) | 0;
       if (this.bondOf[seed] < 0) {
         // The seed's nearest free neighbours, within a few spacings.
