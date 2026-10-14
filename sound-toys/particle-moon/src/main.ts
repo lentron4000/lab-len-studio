@@ -12,7 +12,7 @@ import { load, save, StorageKey } from './lib/storage';
 import { MidiController } from './midi/midi-controller';
 import { type Look, Renderer } from './render/renderer';
 import { Bloom, BLOOM_SECONDS } from './sim/bloom';
-import { Simulation } from './sim/simulation';
+import { Simulation, type Viewport } from './sim/simulation';
 import { bindControls, createAudioListener, type ControlHost } from './ui/controls';
 import { computeViewport, placePanelTab } from './ui/layout';
 import { ShowMode } from './ui/show';
@@ -113,7 +113,16 @@ class App implements ControlHost {
     fire: (strength) => {
       this.fire(strength);
     },
+    pan: (x, y) => {
+      this.panTarget.x = x;
+      this.panTarget.y = y;
+    },
   });
+  /** AI mode's slow pan (fractions of the screen), eased; back to centre when it's off. */
+  private readonly panTarget = { x: 0, y: 0 };
+  private readonly panNow = { x: 0, y: 0 };
+  /** The shape's laid-out place before any pan. */
+  private baseView: Viewport | null = null;
   /** True while the director moves a control, so its own moves aren't taken as the performer's. */
   private driving = false;
 
@@ -257,20 +266,32 @@ class App implements ControlHost {
 
   relayout(): void {
     placePanelTab(this.panel);
-    this.sim.setViewport(
-      computeViewport(window.innerWidth, window.innerHeight, this.header, this.panel),
-      false,
-    );
+    this.baseView = computeViewport(window.innerWidth, window.innerHeight, this.header, this.panel);
+    this.sim.setViewport(this.panned(this.baseView), false);
+  }
+
+  /** The laid-out viewport moved by the current pan. */
+  private panned(view: Viewport): Viewport {
+    return { ...view, cx: view.cx + this.panNow.x * view.width, cy: view.cy + this.panNow.y * view.height };
+  }
+
+  private applyPan(dt: number): void {
+    if (!this.director.enabled) this.panTarget.x = this.panTarget.y = 0;
+    const k = 1 - Math.exp(-dt / 0.5);
+    const dx = (this.panTarget.x - this.panNow.x) * k;
+    const dy = (this.panTarget.y - this.panNow.y) * k;
+    if (!this.baseView || (Math.abs(dx) < 1e-6 && Math.abs(dy) < 1e-6)) return;
+    this.panNow.x += dx;
+    this.panNow.y += dy;
+    this.sim.setViewport(this.panned(this.baseView), false);
   }
 
   private resize(): void {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     this.renderer.resize(window.innerWidth, window.innerHeight, dpr);
     placePanelTab(this.panel);
-    this.sim.setViewport(
-      computeViewport(window.innerWidth, window.innerHeight, this.header, this.panel),
-      true,
-    );
+    this.baseView = computeViewport(window.innerWidth, window.innerHeight, this.header, this.panel);
+    this.sim.setViewport(this.panned(this.baseView), true);
   }
 
   private frame(now: number): void {
@@ -281,6 +302,7 @@ class App implements ControlHost {
     this.renderer.tick(dtMs / 1000, nowSeconds());
     this.handleTransport();
     this.listen(dtMs / 1000);
+    this.applyPan(dtMs / 1000);
     this.beatDot.style.opacity = (0.12 + 0.88 * this.beatFlash).toFixed(2);
     this.beatFlash *= 0.88;
 

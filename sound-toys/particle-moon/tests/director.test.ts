@@ -7,18 +7,21 @@ function setup(): {
   sliders: Map<string, number>;
   options: Map<string, string>;
   hits: number[];
+  pans: [number, number][];
 } {
   const sliders = new Map<string, number>();
   const options = new Map<string, string>();
   const hits: number[] = [];
+  const pans: [number, number][] = [];
   const controls: DirectorControls = {
     setSlider: (id, v) => sliders.set(id, v),
     setOption: (group, id) => options.set(group, id),
     fire: (s) => hits.push(s),
+    pan: (x, y) => pans.push([x, y]),
   };
   const director = new Director(controls);
   director.start({ state: 0, depth: 0.5, spin: 0, mforce: 0.5 });
-  return { director, sliders, options, hits };
+  return { director, sliders, options, hits, pans };
 }
 
 /** Plays `seconds` of music with these features, 60 frames a second. Returns the scenes seen. */
@@ -103,22 +106,55 @@ describe('AI mode', () => {
     expect(sliders.get('spin')).toBeLessThan(4 / 8);
   });
 
-  it('moves to a new look every four bars with a beat', () => {
-    const { director, options } = setup();
-    play(director, groove, 10, 0, 124);
-    const looks: string[] = [];
+  /** Plays `bars` of groove beat by beat; returns the bars (1-based) at which the look changed. */
+  function lookChanges(
+    director: Director,
+    options: Map<string, string>,
+    bars: number,
+    f: MusicFeatures,
+  ): number[] {
+    const changes: number[] = [];
     let t = 10;
-    for (let bar = 0; bar < 12; bar++) {
+    let look = `${options.get('mode')}/${options.get('shape')}`;
+    for (let bar = 1; bar <= bars; bar++) {
       for (let b = 0; b < 4; b++) {
         director.beat();
-        play(director, groove, 60 / 124, t, 124);
+        play(director, f, 60 / 124, t, 124);
         t += 60 / 124;
       }
-      looks.push(`${options.get('mode')}/${options.get('shape')}`);
+      const now = `${options.get('mode')}/${options.get('shape')}`;
+      if (now !== look) changes.push(bar);
+      look = now;
     }
-    // 12 bars: a change every 4 bars (3 changes), each to a different mode and shape.
-    const changes = looks.filter((l, i) => i > 0 && l !== looks[i - 1]).length;
-    expect(changes).toBe(3);
+    return changes;
+  }
+
+  it('changes the look every 12–32 bars, in 4-bar steps, sooner when the energy is high', () => {
+    const mean = (f: MusicFeatures): number => {
+      const { director, options } = setup();
+      play(director, f, 10, 0, 124);
+      const at = lookChanges(director, options, 400, f);
+      const gaps = at.slice(1).map((b, i) => b - at[i]);
+      for (const g of gaps) {
+        expect(g).toBeGreaterThanOrEqual(12);
+        expect(g).toBeLessThanOrEqual(32);
+        expect(g % 4).toBe(0);
+      }
+      return gaps.reduce((a, b) => a + b, 0) / gaps.length;
+    };
+    const busy = mean({ ...groove, energy: 0.9, baseline: 0.6 });
+    const calm = mean({ ...groove, energy: 0.3, baseline: 0.6 });
+    expect(busy).toBeLessThan(calm);
+  });
+
+  it('pans slowly, staying near the middle', () => {
+    const { director, pans } = setup();
+    play(director, groove, 240, 0, 124);
+    const xs = pans.map(([x]) => x);
+    expect(Math.max(...xs.map(Math.abs))).toBeLessThanOrEqual(0.12);
+    expect(Math.max(...xs) - Math.min(...xs)).toBeGreaterThan(0.02);
+    // Slow: never more than a sliver of the screen between frames.
+    for (let i = 1; i < pans.length; i++) expect(Math.abs(pans[i][0] - pans[i - 1][0])).toBeLessThan(0.002);
   });
 
   it('swings State open on each beat in a groove, and not in ambient music', () => {
@@ -152,17 +188,15 @@ describe('AI mode', () => {
     play(director, groove, 10, 0, 124);
     const moons: string[] = [];
     let t = 10;
-    for (let bar = 0; bar < 64; bar++) {
-      for (let b = 0; b < 4; b++) {
-        const before = options.get('moon');
-        director.beat();
-        play(director, groove, 60 / 124, t, 124);
-        t += 60 / 124;
-        const changedHere = options.get('moon') !== before;
-        // Only on a bar that starts a new look (every 4 bars).
-        if (changedHere) expect((bar * 4 + b + 1) % 16).toBe(0);
-      }
-      if (bar % 4 === 3) moons.push(options.get('moon') ?? '');
+    for (let beat = 0; beat < 4 * 200; beat++) {
+      const before = [options.get('moon'), options.get('mode'), options.get('shape')];
+      director.beat();
+      play(director, groove, 60 / 124, t, 124);
+      t += 60 / 124;
+      const moonChanged = options.get('moon') !== before[0];
+      const lookChanged = options.get('mode') !== before[1] || options.get('shape') !== before[2];
+      if (moonChanged) expect(lookChanged).toBe(true);
+      if (lookChanged) moons.push(options.get('moon') ?? '');
     }
     expect(moons).toContain('on');
     expect(moons).toContain('off');

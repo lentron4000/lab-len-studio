@@ -33,11 +33,18 @@ const NO_BEAT_RATE = 0.4;
 /** A new scene must hold this long before it's taken (a drop is taken at once). */
 const SETTLE = 2.5;
 /**
- * Looks (physics mode and shape) change every LOOK_BEATS beats (4 bars) with a beat, or at the next bar
+ * Looks (physics mode and shape) change every LOOK_BARS (12–32, in 4-bar steps, high energy favouring
+ * the short end) with a beat, or at the next bar
  * when the energy shifts by ENERGY_SHIFT of the track's norm; without a beat, on an energy shift (at
  * least AMBIENT_MIN s apart) or every AMBIENT_EVERY s.
  */
-const LOOK_BEATS = 16;
+const LOOK_BARS: readonly [number, number] = [12, 32];
+/** Energy shifts change the look early, but not within this many bars of the last change. */
+const SHIFT_MIN_BARS = 4;
+/** Panning: a new spot every PAN_BARS, at most PAN_X / PAN_Y of the screen from centre. */
+const PAN_BARS = 32;
+const PAN_X = 0.12;
+const PAN_Y = 0.08;
 const ENERGY_SHIFT = 0.25;
 const AMBIENT_MIN = 6;
 const AMBIENT_EVERY = 30;
@@ -68,12 +75,25 @@ function spinIndex(bpm: number): number {
   return best;
 }
 
+/**
+ * Bars until the next look change: 12–32 in 4-bar steps, skewed short when the energy (0–1) is high and
+ * long when it's low.
+ */
+function lookBars(energy: number): number {
+  const r = Math.random();
+  const skew = energy >= 0.5 ? r ** (1 + 6 * (energy - 0.5)) : 1 - (1 - r) ** (1 + 6 * (0.5 - energy));
+  const bars = LOOK_BARS[0] + (LOOK_BARS[1] - LOOK_BARS[0]) * skew;
+  return Math.round(bars / 4) * 4;
+}
+
 /** Physical controls the director moves. Sliders take a 0–1 value; options an id. */
 export interface DirectorControls {
   setSlider(id: SliderId, value01: number): void;
   setOption(group: OptionGroup, id: string): void;
   /** A big hit (the drop). */
   fire(strength: number): void;
+  /** Moves the shape off centre by these fractions of the screen's width and height. */
+  pan(x: number, y: number): void;
 }
 
 /**
@@ -94,6 +114,9 @@ export class Director {
   private lastQuietAt = -Infinity;
   /** Beats since the look last changed, beats overall, and the energy and time at that change. */
   private lookBeats = 0;
+  /** Beats until the next look change (12–32 bars, picked at each change). */
+  private nextLook = 64;
+  private pan = { fromX: 0, fromY: 0, toX: 0, toY: 0, start: -Infinity, length: 1 };
   private beats = 0;
   private lookEnergy = 0;
   private lookAt = -Infinity;
@@ -116,6 +139,8 @@ export class Director {
     this.chosen.mode = this.chosen.shape = this.chosen.moon = '';
     this.lookScene = null;
     this.lookBeats = 0;
+    // Pan from wherever the shape sits now.
+    this.pan.start = -Infinity;
     this.enabled = true;
   }
 
@@ -136,6 +161,7 @@ export class Director {
     const k = 1 - Math.exp(-dt / look.glide);
     for (const id of Object.keys(this.value) as SliderId[]) this.value[id] += (look[id] - this.value[id]) * k;
     this.swing *= Math.exp(-dt / SWING_TAU);
+    this.panStep();
     this.sinceApply += dt;
     if (this.sinceApply >= 1 / APPLY_RATE) {
       this.sinceApply = 0;
@@ -160,8 +186,28 @@ export class Director {
     const accent = this.beats % 4 === 1;
     this.swing = Math.max(this.swing, this.current.swing * (accent ? ACCENT : 1));
     const bar = this.lookBeats % 4 === 0;
-    if (this.lookBeats >= LOOK_BEATS || (bar && this.lookBeats >= 4 && this.energyShifted()))
+    if (
+      this.lookBeats >= this.nextLook ||
+      (bar && this.lookBeats >= SHIFT_MIN_BARS * 4 && this.energyShifted())
+    )
       this.changeLook();
+  }
+
+  /** Slow pans: over each PAN_BARS the shape eases to a new spot on screen. */
+  private panStep(): void {
+    const p = this.pan;
+    const t = (this.now - p.start) / p.length;
+    if (t >= 1) {
+      p.fromX = p.toX;
+      p.fromY = p.toY;
+      p.toX = (Math.random() * 2 - 1) * PAN_X;
+      p.toY = (Math.random() * 2 - 1) * PAN_Y;
+      p.start = this.now;
+      p.length = (PAN_BARS * 4 * 60) / (this.bpm || 100);
+      return;
+    }
+    const e = t * t * (3 - 2 * t);
+    this.controls.pan(p.fromX + (p.toX - p.fromX) * e, p.fromY + (p.toY - p.fromY) * e);
   }
 
   private energyShifted(): boolean {
@@ -182,6 +228,11 @@ export class Director {
     // The moon comes and goes at random, but only here, on the music's own changes.
     this.choose('moon', Math.random() < look.moon ? 'on' : 'off');
     this.lookBeats = 0;
+    this.nextLook =
+      4 *
+      lookBars(
+        this.features ? Math.min(1, this.features.energy / Math.max(0.2, this.features.baseline * 1.4)) : 0.5,
+      );
     this.lookAt = this.now;
     this.lookScene = this.scene;
     this.lookEnergy = this.features?.energy ?? 0;
