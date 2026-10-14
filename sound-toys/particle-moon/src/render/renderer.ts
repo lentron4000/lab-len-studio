@@ -34,6 +34,9 @@ const STREAK_FRAMES = 7;
 const STREAK_TOP_BARS = 2;
 const STREAK_OCTAVES = 5;
 const STREAK_GAIN_MAX = 28;
+/** A streak tapers to this share of the dot's width at its tail, and (glow looks) keeps this much of its opacity there. */
+const STREAK_TAIL_WIDTH = 0.4;
+const STREAK_TAIL_ALPHA = 0.55;
 /** A particle starts to stretch once its streak is this fraction of its own radius. */
 const STREAK_FROM = 0.3;
 /** Glow looks: sprites stamped along a streak, at most. */
@@ -250,13 +253,14 @@ export class Renderer {
             sy *= streakMax / sl;
           }
           if (sl > r * STREAK_FROM) {
-            // A streak: sprites stamped back along its motion, fading toward the tail.
+            // A streak: sprites stamped back along its motion, thinning and fading a little toward the tail.
             const stamps = Math.min(STREAK_STAMPS, Math.ceil(Math.min(sl, streakMax) / r));
             const head = ctx.globalAlpha;
             for (let k = stamps; k >= 0; k--) {
               const t = k / stamps;
-              ctx.globalAlpha = head * (1 - 0.7 * t);
-              ctx.drawImage(sprite, px - sx * t - r, py - sy * t - r, r * 2, r * 2);
+              const rt = r * (1 - (1 - STREAK_TAIL_WIDTH) * t);
+              ctx.globalAlpha = head * (1 - (1 - STREAK_TAIL_ALPHA) * t);
+              ctx.drawImage(sprite, px - sx * t - rt, py - sy * t - rt, rt * 2, rt * 2);
             }
             ctx.globalAlpha = head;
           } else {
@@ -302,24 +306,33 @@ export class Renderer {
         }
         ctx.fill();
         if (streaking) {
-          // Each streaking particle as a round-ended line back along its motion: the particle is its trail.
-          ctx.strokeStyle = DAY_BANDS[b % BANDS];
-          ctx.lineWidth = dot * 2;
-          ctx.lineCap = 'round';
+          // Each streaking particle as a teardrop back along its motion, full width at the particle and
+          // thinning to its tail: the particle is its trail.
+          const tail = dot * STREAK_TAIL_WIDTH;
           ctx.beginPath();
           for (let n = 0; n < streaking; n++) {
             const i = this.streakI[n];
             let sx = this.velX[i] * streak;
             let sy = this.velY[i] * streak;
-            const sl = Math.hypot(sx, sy);
+            const sl = Math.hypot(sx, sy) || 1;
             if (sl > streakMax) {
               sx *= streakMax / sl;
               sy *= streakMax / sl;
             }
-            ctx.moveTo(this.streakX[n] - sx, this.streakY[n] - sy);
-            ctx.lineTo(this.streakX[n], this.streakY[n]);
+            const hx = this.streakX[n];
+            const hy = this.streakY[n];
+            // Side of the motion (its normal) and that side's angle.
+            const side = Math.atan2(sx, -sy);
+            const nx = Math.cos(side);
+            const ny = Math.sin(side);
+            ctx.moveTo(hx + nx * dot, hy + ny * dot);
+            ctx.lineTo(hx - sx + nx * tail, hy - sy + ny * tail);
+            ctx.arc(hx - sx, hy - sy, tail, side, side + Math.PI);
+            ctx.lineTo(hx - nx * dot, hy - ny * dot);
+            ctx.arc(hx, hy, dot, side + Math.PI, side + 2 * Math.PI);
+            ctx.closePath();
           }
-          ctx.stroke();
+          ctx.fill();
         }
         for (let n = 0; n < fading; n++) {
           const i = this.fadeI[n];

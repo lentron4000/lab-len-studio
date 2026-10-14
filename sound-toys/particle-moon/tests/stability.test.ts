@@ -53,3 +53,38 @@ it('a loose gas cloud stays centred while the moon orbits it', () => {
   // Before the centring spring, the moon's bow wave carried the whole cloud ±20% of the radius.
   expect(worst / 300).toBeLessThan(0.04);
 });
+
+it('loose gas keeps its shape while spinning: no clump on the globe, no fling on the disc', () => {
+  for (const globe of [0, 1]) {
+    const sim = new Simulation(1500);
+    sim.mode = PHYSICS_MODES.gas;
+    sim.moon.enabled = false;
+    sim.shapeTarget = sim.globe = globe;
+    sim.stateTarget = sim.state = 1;
+    sim.sound = 0.6;
+    sim.bpm = 100;
+    sim.spinBars = 1;
+    sim.setViewport({ width: 1440, height: 900, radius: 280, cx: 720, cy: 450 }, true);
+    for (let s = 0; s < 30 * 60; s++) sim.step();
+    let mx = 0;
+    let my = 0;
+    let mz = 0;
+    for (let i = 0; i < sim.count; i++) {
+      mx += sim.x[i];
+      my += sim.y[i];
+      mz += sim.z[i];
+    }
+    mx /= sim.count;
+    my /= sim.count;
+    mz /= sim.count;
+    let spread = 0;
+    for (let i = 0; i < sim.count; i++) spread += Math.hypot(sim.x[i] - mx, sim.y[i] - my);
+    spread /= sim.count * 280;
+    const label = globe ? 'globe' : 'disc';
+    // The globe used to collapse into a clump ~1.8 radii off centre, on the spin axis.
+    expect(Math.hypot(mx - 720, my - 450, mz) / 280, label).toBeLessThan(0.1);
+    // The disc used to fling out to ~2.6 radii.
+    expect(spread, label).toBeGreaterThan(0.6);
+    expect(spread, label).toBeLessThan(1.6);
+  }
+});

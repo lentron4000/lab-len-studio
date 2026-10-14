@@ -108,7 +108,7 @@ const SILENT_Z_DAMPING = 0.8;
  * Keeps the shape as a whole on its centre: a spring and damper (per step) on the centroid of the
  * particles still in the shape. Local dents and stirs are untouched, but a loose cloud no longer slides
  * bodily after the moon, kicks or spin (the moon alone sloshed it ±17% of the radius each orbit; now a few
- * percent). Off for held formations.
+ * percent). Off for held formations and the globe.
  */
 const CENTRE_SPRING = 0.04;
 const CENTRE_DAMPING = 0.35;
@@ -726,7 +726,9 @@ export class Simulation {
     if (e > 0.02) this.interact(re, e, scale, gw, W, H);
 
     let ke = 0;
-    const centring = 1 - fw;
+    // Flat shapes only: the globe's spin carries particles through depth, which this x/y spring can't see,
+    // and fighting it there drove loose gas into a clump on the spin axis. The globe's shell holds it.
+    const centring = (1 - fw) * (1 - gw);
     const centreAx = -(CENTRE_SPRING * this.driftX + CENTRE_DAMPING * this.driftVx) * centring;
     const centreAy = -(CENTRE_SPRING * this.driftY + CENTRE_DAMPING * this.driftVy) * centring;
     let sumX = 0;
@@ -1171,6 +1173,11 @@ export class Simulation {
         const along = ((vx[i] - tvx) * -sy + (vy[i] - tvy) * sx) / r2;
         ax -= -sy * along * swirlGrip * e;
         ay -= sx * along * swirlGrip * e;
+        // …and held to their circle: the inward pull their circling needs (v²/r), or the swirl flings loose
+        // gas outward until it is spread far past the shape.
+        const turn = (vx[i] * -sy + vy[i] * sx) / r2;
+        ax -= sx * turn * turn * e;
+        ay -= sy * turn * turn * e;
       }
       if (!v) {
         ax += centreAx;
