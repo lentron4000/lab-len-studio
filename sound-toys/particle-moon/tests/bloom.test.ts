@@ -2,28 +2,32 @@ import { expect, it } from 'vitest';
 import { Bloom, BLOOM_SECONDS } from '../src/sim/bloom';
 import { Simulation } from '../src/sim/simulation';
 
-it('starts every particle at the loader and ends with each at home', () => {
+it('grows the circle out from its centre over three seconds, ending with each particle at home', () => {
   const sim = new Simulation(1200);
   sim.setViewport({ width: 1440, height: 900, radius: 300, cx: 720, cy: 400 }, true);
   const homeX = Float32Array.from(sim.x);
   const homeY = Float32Array.from(sim.y);
   const bloom = new Bloom(sim, 720, 400);
+  const extent = (): number => {
+    let r = 0;
+    for (let i = 0; i < sim.count; i++) r = Math.max(r, Math.hypot(sim.x[i] - 720, sim.y[i] - 400));
+    return r;
+  };
 
-  const bornCount = (): number => bloom.hidden.reduce((n, h) => n + (h ? 0 : 1), 0);
+  expect(BLOOM_SECONDS).toBe(3);
   bloom.update(0);
-  expect(bornCount()).toBeLessThan(sim.count * 0.02);
-  let born = 0;
-  for (let t = 0; t <= BLOOM_SECONDS; t += 0.1) {
+  expect(extent()).toBeLessThan(1); // a point at the centre
+  let last = 0;
+  for (let t = 0.1; t <= BLOOM_SECONDS; t += 0.1) {
     bloom.update(t);
-    expect(bornCount()).toBeGreaterThanOrEqual(born); // births only accumulate
-    born = bornCount();
+    const r = extent();
+    expect(r).toBeGreaterThan(last); // only ever grows
+    last = r;
   }
   bloom.update(BLOOM_SECONDS);
-  expect(bornCount()).toBe(sim.count);
   expect(bloom.done(BLOOM_SECONDS)).toBe(true);
   for (let i = 0; i < sim.count; i++) {
     expect(sim.x[i]).toBeCloseTo(homeX[i], 3);
     expect(sim.y[i]).toBeCloseTo(homeY[i], 3);
-    expect(sim.excite[i]).toBeCloseTo(0, 5);
   }
 });

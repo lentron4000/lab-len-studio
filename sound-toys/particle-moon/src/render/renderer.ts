@@ -23,6 +23,8 @@ import {
 import { Tracers } from './tracers';
 
 const BANDS = 4;
+/** Spin streaks (each particle drawn out along its motion): off for now; true brings them back. */
+const SPIN_STREAKS: boolean = false;
 /** Spinning, each particle is drawn as a streak: its smoothed screen motion over this many frames. */
 const STREAK_FRAMES = 7;
 /**
@@ -57,10 +59,8 @@ export type Look = 'day' | 'night' | 'ritual';
  */
 export class Renderer {
   look: Look = 'day';
-  /** Only particles below this index are drawn (0 hides them all while the loader shows). */
+  /** Only particles below this index are drawn (0 hides them all until the layout is final). */
   limit = Infinity;
-  /** During the opening bloom: particles not yet born (1) aren't drawn. */
-  hidden: Uint8Array | null = null;
   readonly fireflies: Fireflies;
   readonly tracers: Tracers;
   readonly embers = new Embers();
@@ -238,7 +238,7 @@ export class Renderer {
     // Frames of motion that make the rim's streak `reach` of its length at the top setting.
     const streak =
       Math.min(STREAK_GAIN_MAX, (STREAK_FRAMES * topSpin * reach) / Math.max(spin, 1e-6)) *
-      (this.streakFrames > 2 ? 1 : 0);
+      (this.streakFrames > 2 && SPIN_STREAKS ? 1 : 0);
     const streakMax = Math.max(dot, re * topSpin * STREAK_FRAMES);
     this.streakFrames++;
     for (let b = 0; b < BANDS * 2; b++) {
@@ -401,10 +401,8 @@ export class Renderer {
     const z = this.drawZ;
     const count = Math.min(this.sim.count, this.limit);
     const cut = moon.visible ? moon.z - moon.vz * (1 - this.blend) : Infinity;
-    const hidden = this.hidden;
     this.bandSize.fill(0);
     for (let i = 0; i < count; i++) {
-      if (hidden?.[i]) continue;
       const t = z[i] / re;
       const depth = t > -0.25 ? 3 : t > -0.55 ? 2 : t > -0.8 ? 1 : 0;
       const b = depth + (z[i] > cut ? BANDS : 0);

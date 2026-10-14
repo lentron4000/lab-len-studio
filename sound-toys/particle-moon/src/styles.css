@@ -671,7 +671,7 @@ legend {
   }
 }
 
-/* Opening: after the loader and the bloom, the header and controls fade in. */
+/* Opening: once the layout is final, the header and controls fade in as the shape grows. */
 html.intro .top,
 html.intro #panel,
 html.intro .tab {

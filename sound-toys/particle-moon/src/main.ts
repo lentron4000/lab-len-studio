@@ -11,7 +11,7 @@ import { nowSeconds } from './lib/math';
 import { load, save, StorageKey } from './lib/storage';
 import { MidiController } from './midi/midi-controller';
 import { type Look, Renderer } from './render/renderer';
-import { Bloom, BLOOM_SECONDS } from './sim/bloom';
+import { Bloom } from './sim/bloom';
 import { Simulation, type Viewport } from './sim/simulation';
 import { bindControls, createAudioListener, type ControlHost } from './ui/controls';
 import { computeViewport, placePanelTab } from './ui/layout';
@@ -21,12 +21,8 @@ import { bindSummoning } from './ui/summon';
 const STEP_MS = 1000 / 60;
 const MAX_STEPS_PER_FRAME = 3;
 const DEFAULT_BPM = 100;
-/** The loader shows at least this long, so it reads as a beat rather than a flicker… */
-const MIN_LOADER_MS = 800;
-/** …and waits at most this long for the web fonts (offline they never come). */
+/** The opening waits at most this long for the web fonts (offline they never come). */
 const FONT_WAIT_MS = 3000;
-/** Into the bloom, as a share of its length, when the logo and controls fade in. */
-const UI_REVEAL_AT = 0.6;
 
 const wait = (ms: number): Promise<void> =>
   new Promise((resolve) => {
@@ -162,9 +158,8 @@ class App implements ControlHost {
       onPressure,
     );
     this.setLook(this.mode.look ?? savedLook());
-    // Opens with the controls collapsed but the header and Controls button showing. H (or Hide) still
-    // clears everything for projection.
-    controls.setPanel(false, false, false);
+    // Opens with the controls showing. H (or Hide) clears everything for projection.
+    controls.setPanel(true, false);
 
     window.addEventListener('resize', () => {
       this.resize();
@@ -205,40 +200,24 @@ class App implements ControlHost {
     void this.open(reducedMotion);
   }
 
-  /** Loader → bloom → controls. Waits for the fonts so the panel is measured at its final size. */
+  /** Controls, then the circle grows from its centre. Waits for the fonts so the panel is measured at its final size. */
   private async open(reducedMotion: boolean): Promise<void> {
     this.renderer.limit = 0;
-    this.placeLoader();
-    await Promise.all([Promise.race([document.fonts.ready, wait(FONT_WAIT_MS)]), wait(MIN_LOADER_MS)]);
+    await Promise.race([document.fonts.ready, wait(FONT_WAIT_MS)]);
     this.resize(); // final layout; every particle at home
-    this.placeLoader();
     this.waiting = false;
     document.documentElement.classList.remove('loading');
-    if (reducedMotion) {
-      this.renderer.limit = Infinity;
-      this.showUi();
-      return;
-    }
+    this.showUi();
+    this.renderer.limit = Infinity;
+    if (reducedMotion) return;
     const { cx, cy } = this.sim.viewport;
     this.bloom = new Bloom(this.sim, cx, cy);
-    this.renderer.hidden = this.bloom.hidden;
-    this.renderer.limit = Infinity;
     this.bloomStart = performance.now();
-  }
-
-  /** Moves the loader's particle to the shape's centre, where the bloom will start. */
-  private placeLoader(): void {
-    const { cx, cy } = this.sim.viewport;
-    const style = document.documentElement.style;
-    style.setProperty('--lx', `${cx}px`);
-    style.setProperty('--ly', `${cy}px`);
   }
 
   private endBloom(): void {
     this.bloom = null;
-    this.renderer.hidden = null;
     this.renderer.limit = Infinity;
-    this.showUi();
   }
 
   private showUi(): void {
@@ -351,10 +330,9 @@ class App implements ControlHost {
     if (!this.bloom) return;
     const t = (now - this.bloomStart) / 1000;
     this.bloom.update(t);
-    // Particles jump from the loader as they're born; don't draw trails across that.
+    // Growing isn't motion of their own: no trails or streaks from it.
     this.renderer.tracers.reset();
     this.renderer.resetStreaks();
-    if (t > BLOOM_SECONDS * UI_REVEAL_AT) this.showUi();
     if (this.bloom.done(t)) this.endBloom();
   }
 
