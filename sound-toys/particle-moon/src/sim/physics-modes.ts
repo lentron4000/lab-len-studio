@@ -29,6 +29,8 @@ export interface PhysicsMode {
   thermal: number;
   /** Visual jitter added at draw time (vibration), in pixels at full energy. */
   jitter: number;
+  /** Whether the pointer acts on it at all (gas B is left to drift on its own). */
+  pointer: boolean;
   /** Pointer gravity (negative repels). */
   pointerGravity: number;
   /** How strongly the pointer drags nearby particles along with its motion. */
@@ -90,6 +92,7 @@ export const PHYSICS_MODES: Record<PhysicsModeId, PhysicsMode> = {
     damping: 0.999,
     thermal: 0.06,
     jitter: 0.35,
+    pointer: true,
     pointerGravity: 2600,
     pointerWake: 0.12,
     repulsion: 0.45,
@@ -121,6 +124,7 @@ export const PHYSICS_MODES: Record<PhysicsModeId, PhysicsMode> = {
     damping: 0.999,
     thermal: 0.06,
     jitter: 0.35,
+    pointer: false,
     pointerGravity: 2600,
     pointerWake: 0.12,
     repulsion: 0.45,
@@ -152,6 +156,7 @@ export const PHYSICS_MODES: Record<PhysicsModeId, PhysicsMode> = {
     damping: 0.99,
     thermal: 0.03,
     jitter: 0.25,
+    pointer: true,
     pointerGravity: 3600,
     pointerWake: 0.2,
     repulsion: 0.5,

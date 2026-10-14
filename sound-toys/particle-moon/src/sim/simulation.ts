@@ -124,7 +124,7 @@ const SILENT_Z_DAMPING = 0.8;
  * Tight resists (ATMO_TIGHT of it). Speeds are px/step at the reference radius.
  */
 const ATMO_BANDS = 2;
-const ATMO_GATHER = 0.07;
+const ATMO_GATHER = 0.04;
 const ATMO_HOLD = 30;
 const ATMO_SETTLE = 1.5;
 const ATMO_BAND_PERIOD = 90;
@@ -147,7 +147,7 @@ const ATMO_PATCH_FULL = 0.6;
  */
 const ATMO_SWIRLS = 4;
 const ATMO_SWIRL_SIZE = 0.35;
-const ATMO_SWIRL_SPEED = 0.25;
+const ATMO_SWIRL_SPEED = 0.14;
 const ATMO_SWIRL_DRIFT = 0.0015;
 /** A kick's turbulence: more, smaller and quicker eddies that take over from the rings, settling over ATMO_SETTLE_BEATS. */
 const ATMO_EDDIES = 7;
@@ -160,9 +160,9 @@ const ATMO_GRIP = 0.035;
 /** Smoke drifts on its own toward Loose: stir rising from none at Tight to this much at the loosest. */
 const ATMO_AMBIENT = 0.45;
 /** Gas B's molecules idle at this share of gas A's speed when nothing stirs them (ambient drift stays slow). */
-const ATMO_CALM_SPEED = 0.25;
+const ATMO_CALM_SPEED = 0.12;
 /** …and at most this share when stirred (it stays floaty with music; a kick's eddies add the churn). */
-const ATMO_STIRRED_SPEED = 0.55;
+const ATMO_STIRRED_SPEED = 0.3;
 const ATMO_TIGHT = 0.2;
 const ATMO_STIR_SPEED = 10;
 const ATMO_STIR_FADE = 1.5;
@@ -793,6 +793,7 @@ export class Simulation {
 
     // Pointer: gravity scales with movement in the fluid modes; poles are always on.
     pointer.step();
+    const pointerOn = pointer.active && mode.pointer;
     // Atmosphere (Gas B): how much is stirring it, and how chaotic a kick has left it.
     const atmo = mode.atmosphere * (1 - fw);
     let atmoLevel = 0;
@@ -803,7 +804,7 @@ export class Simulation {
       const beat = 60 / (this.bpm || 120);
       this.turbulence *= Math.exp(-1 / 60 / (beat * ATMO_SETTLE_BEATS));
       if (drive) this.turbulence = Math.min(1.5, this.turbulence + drive * ATMO_KICK);
-      const over = pointer.active && Math.hypot(pointer.x - cx, pointer.y - cy) < re * 1.4;
+      const over = pointerOn && Math.hypot(pointer.x - cx, pointer.y - cy) < re * 1.4;
       this.stir *= Math.exp(-1 / 60 / ATMO_STIR_FADE);
       if (over)
         this.stir = Math.max(this.stir, Math.min(1, Math.hypot(pointer.vx, pointer.vy) / ATMO_STIR_SPEED));
@@ -1205,7 +1206,7 @@ export class Simulation {
         }
       }
       this.huddle[i] = 0;
-      if (pointer.active && !fluidPointer) {
+      if (pointerOn && !fluidPointer) {
         // Attract and repel: the pointer is a magnetic pole. It acts where the particle appears on screen.
         const ps = camera / (camera - z[i]);
         const dx = pointer.x - (cx + ox * ps);
@@ -1220,7 +1221,7 @@ export class Simulation {
           ax += pvx * w;
           ay += pvy * w;
         }
-      } else if (pointer.active) {
+      } else if (pointerOn) {
         // Gas and water: the pointer is a solid body moving through the fluid, like a cylinder in a flow
         // tank. Ahead and alongside, the fluid parts and slides round it (potential flow); it can't pass
         // through; behind, a wake drags along after it and sheds eddies to alternate sides.
@@ -1437,7 +1438,7 @@ export class Simulation {
       x[i] += nvx;
       y[i] += nvy;
       z[i] += nvz;
-      if (liquidHold && pointer.active) {
+      if (liquidHold && pointerOn) {
         // After moving: no liquid dot ends the step inside the gap round the cursor, however hard its
         // springs pulled it in.
         const ps = camera / (camera - z[i]);

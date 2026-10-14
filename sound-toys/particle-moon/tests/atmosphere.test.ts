@@ -148,9 +148,24 @@ it('Gas B drifts slowly and floats round the cloud rather than circling on the s
   let net = 0;
   for (let i = 0; i < sim.count; i++) net += Math.hypot(sim.x[i] - x0[i], sim.y[i] - y0[i]);
   net /= sim.count;
-  // Slow: well under Gas A's ~1 px a step (15 s is 900 steps)...
-  expect(path / 900).toBeLessThan(0.4);
-  // ...but it gets somewhere: tens of pixels, on paths far straighter than a jiggle (Gas A's ~0.04).
-  expect(net).toBeGreaterThan(30);
-  expect(net / path).toBeGreaterThan(0.15);
+  // Slow: a fraction of Gas A's ~1 px a step (15 s is 900 steps)...
+  expect(path / 900).toBeLessThan(0.2);
+  // ...but it gets somewhere, on paths far straighter than a jiggle (Gas A's ~0.04).
+  expect(net).toBeGreaterThan(8);
+  expect(net / path).toBeGreaterThan(0.1);
+});
+
+it('Gas B ignores the pointer', () => {
+  const sim = gasB(0.9, 0);
+  const p = sim.pointer as unknown as { x: number; y: number; active: boolean };
+  travel(sim, 2);
+  p.active = true;
+  p.x = CX;
+  p.y = CY;
+  // A pole would pull particles in; a fluid body would push them aside. Gas B does neither.
+  sim.pole = 1;
+  const near = (): number => sim.x.filter((x, j) => Math.hypot(x - CX, sim.y[j] - CY) < 40).length;
+  const before = near();
+  travel(sim, 3);
+  expect(near()).toBeLessThan(before * 1.3 + 3);
 });
