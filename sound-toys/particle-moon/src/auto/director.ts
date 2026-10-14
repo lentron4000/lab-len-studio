@@ -6,7 +6,7 @@ import type { MusicFeatures } from './listener';
 export type Scene = 'drift' | 'groove' | 'build' | 'drop' | 'breakdown';
 
 /** A slider the director plays (0–1 across its range) or a set of options it picks from. */
-type SliderId = 'state' | 'depth' | 'spin' | 'mforce';
+type SliderId = 'state' | 'depth' | 'spin' | 'orbit' | 'mforce';
 type OptionGroup = 'mode' | 'shape' | 'moon';
 
 /** Where the director wants things, per scene. Sliders 0–1 across their range. */
@@ -14,6 +14,8 @@ interface Look {
   state: number;
   depth: number;
   spin: number;
+  /** The moon's orbit speed (Orbit slider, 0–1). */
+  orbit: number;
   mforce: number;
   /** Physics modes and shapes that suit the scene; the director moves between them. */
   modes: readonly string[];
@@ -116,6 +118,9 @@ export class Director {
   private lookBeats = 0;
   /** Beats until the next look change (12–32 bars, picked at each change). */
   private nextLook = 64;
+  /** Spin and orbit slider steps (0–8) for the current look. */
+  private spinStep = 2;
+  private orbitStep = 3;
   private pan = { fromX: 0, fromY: 0, toX: 0, toY: 0, start: -Infinity, length: 1 };
   private beats = 0;
   private lookEnergy = 0;
@@ -125,7 +130,13 @@ export class Director {
   private current: Look | null = null;
   private features: MusicFeatures | null = null;
   private sinceApply = 0;
-  private readonly value: Record<SliderId, number> = { state: 0, depth: 0.5, spin: 0, mforce: 0.5 };
+  private readonly value: Record<SliderId, number> = {
+    state: 0,
+    depth: 0.5,
+    spin: 0,
+    orbit: 3 / 8,
+    mforce: 0.5,
+  };
   private readonly chosen: Record<OptionGroup, string> = { mode: '', shape: '', moon: '' };
   private readonly touched = new Map<string, number>();
   private now = 0;
@@ -210,6 +221,22 @@ export class Director {
     this.controls.pan(p.fromX + (p.toX - p.fromX) * e, p.fromY + (p.toY - p.fromY) * e);
   }
 
+  /**
+   * Spin and moon orbit for the new look. With a kick: near the tempo-suited speed, a step either way.
+   * Without one, or with little energy: anywhere in the range, to keep things exploring. The disc stays at
+   * or under half speed; the globe can go faster, and to full only rarely, on a strong drop.
+   */
+  private pickSpeeds(f: MusicFeatures, globe: boolean): void {
+    const kick = f.kickRate >= BEAT_RATE;
+    const e = Math.min(1, f.energy / Math.max(0.2, f.baseline * 1.4));
+    const top = globe ? (this.scene === 'drop' && Math.random() < 0.15 ? 8 : 7) : 4;
+    const step = (lo: number, hi: number): number => lo + Math.floor(Math.random() * (hi - lo + 1));
+    const suited = spinIndex(this.bpm);
+    const explore = !kick || e < 0.4;
+    this.spinStep = Math.min(top, explore ? step(1, top) : Math.max(1, suited + step(-1, 1)));
+    this.orbitStep = explore ? step(1, 6) : Math.min(7, Math.max(1, suited - 1 + step(-1, 1)));
+  }
+
   private energyShifted(): boolean {
     const f = this.features;
     return !!f && Math.abs(f.energy - this.lookEnergy) > ENERGY_SHIFT * Math.max(0.2, f.baseline);
@@ -218,15 +245,21 @@ export class Director {
   /** Moves to another physics mode and shape that suit the scene (never the same pair twice running). */
   private changeLook(): void {
     const look = this.current;
-    if (!look) return;
+    const f = this.features;
+    if (!look || !f) return;
     const pick = (options: readonly string[], now: string): string => {
       const others = options.filter((o) => o !== now);
       return others.length ? others[Math.floor(Math.random() * others.length)] : options[0];
     };
-    this.choose('mode', pick(look.modes, this.chosen.mode));
-    this.choose('shape', pick(look.shapes, this.chosen.shape));
     // The moon comes and goes at random, but only here, on the music's own changes.
-    this.choose('moon', Math.random() < look.moon ? 'on' : 'off');
+    const moon = Math.random() < look.moon ? 'on' : 'off';
+    this.choose('moon', moon);
+    // Attract and repel are poles for the moon: without it, only gas and liquid.
+    const modes = moon === 'on' ? look.modes : look.modes.filter((m) => m !== 'attract' && m !== 'repel');
+    this.choose('mode', pick(modes.length ? modes : ['water', 'gas'], this.chosen.mode));
+    const shape = pick(look.shapes, this.chosen.shape);
+    this.choose('shape', shape);
+    this.pickSpeeds(f, shape === 'globe' || (this.chosen.shape === 'globe' && !this.free('shape')));
     this.lookBeats = 0;
     this.nextLook =
       4 *
@@ -273,7 +306,6 @@ export class Director {
       0.5 * (1 - Math.min(1, f.kickRate / 1.5)) + 0.25 * (1 - Math.min(1, f.hatRate / 4)) + 0.25 * (1 - e);
     // Spin to the tempo: with the kick driving, about one turn every SPIN_SECONDS; without it, slower
     // divisions of that same speed so it stays in time.
-    const kickSpin = spinIndex(this.bpm);
     // Slow, unsynchronised cycles (0–1) that keep loose, kickless passages moving without looping.
     const t = this.now;
     const wander =
@@ -286,7 +318,6 @@ export class Director {
       f.kickRate >= BEAT_RATE
         ? Math.min(1, Math.max(0, (f.kickStrength - STRONG_KICK[0]) / (STRONG_KICK[1] - STRONG_KICK[0])))
         : 0;
-    const spin = (slower: number): number => Math.max(1, kickSpin - slower) / 8;
     const bright = f.brightness;
     const through = Math.min(1, this.sceneFor / 16); // how far into the scene (builds ramp with it)
     switch (this.scene) {
@@ -296,7 +327,8 @@ export class Director {
         return {
           state: 0.6 + 0.3 * wander + 0.1 * swell,
           depth: 0.25,
-          spin: spin(3),
+          spin: this.spinStep / 8,
+          orbit: this.orbitStep / 8,
           mforce: 0.25 + 0.3 * bright + 0.35 * wander2,
           modes: ['water', 'gas', 'attract'],
           shapes: ['globe', 'disc'],
@@ -308,7 +340,8 @@ export class Director {
         return {
           state: 0.05 + 0.3 * e + 0.2 * ambience,
           depth: 0.45 + 0.2 * Math.min(1, f.kickStrength) + DEEP * strongKick,
-          spin: spin(0),
+          spin: this.spinStep / 8,
+          orbit: this.orbitStep / 8,
           mforce: 0.5,
           // Anything goes in a groove; brighter music leans to the more agitated modes.
           modes: bright > 0.55 ? ['gas', 'repel', 'attract', 'water'] : ['water', 'attract', 'gas', 'repel'],
@@ -322,7 +355,8 @@ export class Director {
         return {
           state: 0.35 * (1 - through) + 0.05,
           depth: 0.4 + 0.25 * through,
-          spin: spin(through < 0.5 ? 2 : through < 0.9 ? 1 : 0),
+          spin: this.spinStep / 8,
+          orbit: this.orbitStep / 8,
           mforce: 0.6 + 0.3 * through,
           modes: ['attract', 'water'],
           shapes: ['disc', 'globe'],
@@ -336,7 +370,8 @@ export class Director {
           state: 0,
           // Deep only when the kick behind it is strong.
           depth: 0.6 + (0.95 - 0.6) * strongKick,
-          spin: spin(0),
+          spin: this.spinStep / 8,
+          orbit: this.orbitStep / 8,
           mforce: 0.5,
           modes: ['gas', 'repel'],
           shapes: ['disc', 'globe'],
@@ -348,7 +383,8 @@ export class Director {
         return {
           state: 0.55 + 0.3 * wander + 0.1 * swell,
           depth: 0.25,
-          spin: spin(2),
+          spin: this.spinStep / 8,
+          orbit: this.orbitStep / 8,
           mforce: 0.3 + 0.4 * wander2,
           modes: ['water', 'gas', 'attract'],
           shapes: ['disc', 'globe'],

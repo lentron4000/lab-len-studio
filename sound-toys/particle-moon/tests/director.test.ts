@@ -20,7 +20,7 @@ function setup(): {
     pan: (x, y) => pans.push([x, y]),
   };
   const director = new Director(controls);
-  director.start({ state: 0, depth: 0.5, spin: 0, mforce: 0.5 });
+  director.start({ state: 0, depth: 0.5, spin: 0, orbit: 3 / 8, mforce: 0.5 });
   return { director, sliders, options, hits, pans };
 }
 
@@ -97,13 +97,36 @@ describe('AI mode', () => {
     expect(sliders.has('state')).toBe(true);
   });
 
-  it('spins to the tempo with the kick, and at a slower division of it without', () => {
-    const { director, sliders } = setup();
-    play(director, groove, 20, 0, 124);
-    // 124 bpm: about five seconds a turn is 2 bars (Spin step 5 of 8).
-    expect(sliders.get('spin')).toBeCloseTo(5 / 8, 1);
-    play(director, breakdown, 15, 20, 124);
-    expect(sliders.get('spin')).toBeLessThan(4 / 8);
+  it('explores Spin and Orbit at each look: Disc at most half speed, Globe faster, poles only with the moon', () => {
+    for (const f of [groove, ambient]) {
+      const { director, sliders, options } = setup();
+      play(director, f, 10, 0, 124);
+      const spins = { disc: new Set<number>(), globe: new Set<number>() };
+      const orbits = new Set<number>();
+      let t = 10;
+      let settled = 0;
+      let look = '';
+      for (let bar = 0; bar < 600; bar++) {
+        for (let b = 0; b < 4; b++) {
+          director.beat();
+          play(director, f, 60 / 124, t, 124);
+          t += 60 / 124;
+        }
+        const now = `${options.get('mode')}/${options.get('shape')}/${options.get('moon')}`;
+        settled = now === look ? settled + 1 : 0;
+        look = now;
+        if (options.get('moon') === 'off') expect(['gas', 'water']).toContain(options.get('mode'));
+        if (settled < 10) continue; // let the sliders glide in
+        const spin = sliders.get('spin') ?? 0;
+        const shape = options.get('shape') === 'globe' ? 'globe' : 'disc';
+        if (shape === 'disc') expect(spin).toBeLessThanOrEqual(4 / 8 + 0.01);
+        spins[shape].add(Math.round(spin * 8));
+        orbits.add(Math.round((sliders.get('orbit') ?? 0) * 8));
+      }
+      expect(spins.disc.size).toBeGreaterThanOrEqual(f === ambient ? 3 : 1);
+      expect(Math.max(...spins.globe)).toBeGreaterThan(4);
+      expect(orbits.size).toBeGreaterThanOrEqual(3);
+    }
   });
 
   /** Plays `bars` of groove beat by beat; returns the bars (1-based) at which the look changed. */
