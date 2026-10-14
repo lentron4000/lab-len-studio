@@ -250,15 +250,12 @@ export class Renderer {
             sy *= streakMax / sl;
           }
           if (sl > r * STREAK_FROM) {
-            // A streak: sprites stamped back along its motion, fading toward the tail.
+            // A streak: sprites stamped back along its motion, as solid as the particle all the way.
             const stamps = Math.min(STREAK_STAMPS, Math.ceil(Math.min(sl, streakMax) / r));
-            const head = ctx.globalAlpha;
             for (let k = stamps; k >= 0; k--) {
               const t = k / stamps;
-              ctx.globalAlpha = head * (1 - 0.7 * t);
               ctx.drawImage(sprite, px - sx * t - r, py - sy * t - r, r * 2, r * 2);
             }
-            ctx.globalAlpha = head;
           } else {
             ctx.drawImage(sprite, px - r, py - r, r * 2, r * 2);
           }
