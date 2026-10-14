@@ -49,6 +49,8 @@ const HUDDLE_BUZZ = 0.45;
 /** At full drift an evaporating particle is drawn this much smaller and fainter. */
 const VAPOR_SHRINK = 0.8;
 const VAPOR_FAINT = 0.85;
+/** Ritual: the step of the heat ramp every particle rests on (blood red). */
+const RITUAL_REST = 1;
 /** Party and Ritual: the State (scaled by the mode's sizeGain) by which the resting glow is fully back. */
 const GLOW_FULL = 0.5;
 /** Chance per frame that a hot ritual particle sheds an ember, and the excitation it takes. */
@@ -80,7 +82,6 @@ export class Renderer {
   private readonly colourOf: Uint8Array;
   /** Ritual: heat-ramp step per particle this frame, and a fixed per-particle tone so rest isn't flat. */
   private readonly heatOf: Uint8Array;
-  private readonly restTone: Float32Array;
   /** Particle indices per band; 0–3 behind the moon, 4–7 in front. */
   private readonly bands: Int32Array[];
   private readonly bandSize = new Int32Array(BANDS * 2);
@@ -125,7 +126,6 @@ export class Renderer {
     this.strokes = { night: NEON.map(css), ritual: SMOKE.map(css) };
     this.colourOf = assignColours(sim.sphereX, sim.sphereY, sim.sphereZ);
     this.heatOf = new Uint8Array(sim.count);
-    this.restTone = Float32Array.from({ length: sim.count }, () => Math.random());
     this.bands = Array.from({ length: BANDS * 2 }, () => new Int32Array(sim.count));
     this.fadeX = new Float32Array(sim.count);
     this.fadeY = new Float32Array(sim.count);
@@ -231,17 +231,12 @@ export class Renderer {
     const base = lerp(Math.min(0.5, 0.5 / Math.max(coverage, 1e-3)), 0.14, open);
     const bloom = lerp(1.2, 4.2, open);
     const limb = 0.75 * sim.globe * (1 - open);
-    // Ritual: a packed solid glows much less than an open cloud, or the overlap burns it out.
-    const flashGain = ritual ? lerp(0.3, 1, poise) : lerp(0.55, 1, open);
-    const swell = ritual ? lerp(0.35, 1.3, poise) : 0;
+    const flashGain = lerp(0.55, 1, open);
     // Party and Ritual: crisp dots at full Tight, the resting glow fading in toward Loose (full by GLOW_FULL).
     const loosening = Math.min(1, (sim.slider * sim.mode.sizeGain) / GLOW_FULL);
     const glowing = loosening * loosening * (3 - 2 * loosening);
-    const crispness = 1 - glowing;
-    // Ritual dots at rest: smaller and crisper toward solid (red points, not haze).
-    const restSize = lerp(1.1, 1.5, poise);
-    // Packed dots are drawn faint so their overlap doesn't burn out; lift them more there.
-    const restLift = lerp(5, 2.8, poise);
+    // (Ritual has no glow at all: its heat shows as colour, and only the embers glow.)
+    const crispness = ritual ? 1 : 1 - glowing;
     const emberRate = EMBER_RATE * lerp(0.25, 1, poise);
     const { comet } = this.tracers;
     const colourOf = ritual ? this.heatOf : this.colourOf;
@@ -277,11 +272,9 @@ export class Renderer {
           this.track(i, qx, qy);
           const f = Math.max(flash[i], comet[i] * trails);
           // Evaporating particles lose mass as they drift away: smaller and fainter the further out.
-          const r =
-            dot * ps * (ritual ? restSize + swell * f : 2.2 + bloom * f) * (1 - VAPOR_SHRINK * fade[i]);
+          const r = dot * ps * (2.2 + bloom * f) * (1 - VAPOR_SHRINK * fade[i]);
           const rim = 1 - limb * (1 - Math.min(1, Math.abs(z[i]) / re));
-          // Ritual rests brighter: at rest it's all deep red, which needs more weight to read on black.
-          const rest = ritual ? Math.min(0.85, base * restLift) : base;
+          const rest = base;
           const faint = 1 - VAPOR_FAINT * fade[i];
           const px = qx + (Math.random() - 0.5) * 2 * jitter * (1 + HUDDLE_BUZZ * huddle[i]);
           const py = qy + (Math.random() - 0.5) * 2 * jitter * (1 + HUDDLE_BUZZ * huddle[i]);
@@ -292,6 +285,10 @@ export class Renderer {
             ctx.globalAlpha = crispness * bandAlpha * faint;
             ctx.drawImage(crispSprites[colourOf[i]], px - rc, py - rc, rc * 2, rc * 2);
             ctx.globalCompositeOperation = 'lighter';
+          }
+          if (ritual) {
+            if (f > EMBER_HEAT && Math.random() < emberRate * f) this.embers.spawn(px, py, f, R);
+            continue;
           }
           // The resting glow comes in toward Loose; a flash or a kick's heat glows at any State.
           ctx.globalAlpha =
@@ -314,7 +311,6 @@ export class Renderer {
           } else {
             ctx.drawImage(sprite, px - r, py - r, r * 2, r * 2);
           }
-          if (ritual && f > EMBER_HEAT && Math.random() < emberRate * f) this.embers.spawn(px, py, f, R);
         }
       } else {
         ctx.fillStyle = bands[b % BANDS];
@@ -412,16 +408,17 @@ export class Renderer {
   }
 
   /**
-   * Heat-ramp step from excitation, over a resting tone that varies between the two coldest steps.
+   * Heat-ramp step from excitation: every particle rests on blood red (RITUAL_REST) and climbs from there.
    * How hot it can get follows the State slider: a packed solid tops out at ember orange, an open
    * cloud at white.
    */
   private updateHeat(poise: number): void {
     const { excite, count } = this.sim;
     const top = HEAT.length - 1;
-    const reach = top * lerp(0.55, 1, poise);
+    // Every particle rests in the same blood red; stirred up, it climbs the ramp step by step.
+    const reach = (top - RITUAL_REST) * lerp(0.55, 1, poise);
     for (let i = 0; i < count; i++) {
-      this.heatOf[i] = Math.min(top, (this.restTone[i] * 1.8 + excite[i] * reach) | 0);
+      this.heatOf[i] = Math.min(top, RITUAL_REST + ((excite[i] * reach) | 0));
     }
   }
 
