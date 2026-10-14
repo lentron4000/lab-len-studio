@@ -127,20 +127,6 @@ const PUMP_SPRING = 2;
 const PUMP_DECAY = 0.86;
 /** Share of the per-hit evaporation a full pump holds back, so most of the gas comes back on the beat. */
 const PUMP_VAPOR_CUT = 0.7;
-/**
- * Attract bonds: they appear from State BOND_FROM (fading in over the next quarter), up to BOND_MAX at
- * once, pulling members toward their middle (BOND_PULL per px). When loose they stop BOND_GAP spacings
- * short, reaching without touching.
- */
-const BOND_FROM = 0.2;
-const BOND_MAX = 5;
-const BOND_PULL = 0.3;
-const BOND_GAP = 0.5;
-/** 0 below a, 1 above b, smooth in between. */
-function smooth(a: number, b: number, v: number): number {
-  const t = Math.min(1, Math.max(0, (v - a) / (b - a)));
-  return t * t * (3 - 2 * t);
-}
 /** Strongest pad hit: three times a full kick. */
 export const BLAST_MAX = 3;
 /** Hit × Depth at which the vapor blast is complete: the hardest pad at the default Depth. */
@@ -190,10 +176,6 @@ export class Simulation {
    * harder (the moon's pile is left as it is).
    */
   readonly huddle: Float32Array;
-  /** Attract bonds: a few neighbours drawn together for a while, then released (see updateBonds). */
-  private bonds: { members: number[]; age: number; life: number; cx: number; cy: number; cz: number }[] = [];
-  private readonly bondOf: Int16Array;
-  private nextBond = 60;
   /** 0–1 per particle: how far an evaporating particle has drifted from home. It shrinks and fades by this. */
   readonly vaporFade: Float32Array;
   readonly pointer = new Pointer();
@@ -278,7 +260,6 @@ export class Simulation {
     this.discTurn = f();
     this.swirlRate = f();
     this.huddle = f();
-    this.bondOf = new Int16Array(count).fill(-1);
     this.vaporFade = f();
     this.summoning = new Summoning(count);
     this.relX = f();
@@ -629,9 +610,6 @@ export class Simulation {
     const calm = mode.speed * slider * scale * 1.15 + EXCITE_CALM * scale;
     const exciteGain = 1 / (EXCITE_FULL * scale);
     const excite = this.excite;
-    // Attract bonds: none to see when tight; join in the middle; reach without touching when loose.
-    const bondPull = this.updateBonds(slider, re) * BOND_PULL;
-    const bondRest = re * Math.sqrt(Math.PI / N) * BOND_GAP * smooth(0.6, 1, slider);
     for (let i = 0; i < N; i++) {
       // The body spins rigidly; physics runs on top of the rotation.
       if (dM) {
@@ -1030,20 +1008,6 @@ export class Simulation {
         ax -= -sy * along * swirlGrip * e;
         ay -= sx * along * swirlGrip * e;
       }
-      const bond = this.bondOf[i];
-      if (bond >= 0 && bondPull) {
-        const b = this.bonds[bond];
-        const t = b.age / b.life;
-        const env = Math.sin(Math.PI * Math.min(1, t)); // eases in and releases
-        const dx = b.cx - x[i];
-        const dy = b.cy - y[i];
-        const dz = b.cz - z[i];
-        const d = Math.hypot(dx, dy, dz) || 1;
-        const pull = bondPull * env * (d - bondRest);
-        ax += (dx / d) * pull;
-        ay += (dy / d) * pull;
-        az += (dz / d) * pull;
-      }
       const drag = damping * (1 - 0.06 * v * (1 - blast));
       let nvx = (vx[i] + ax) * drag;
       let nvy = (vy[i] + ay) * drag;
@@ -1067,63 +1031,6 @@ export class Simulation {
       if (excite[i] < burn * 0.85) excite[i] = burn * 0.85;
     }
     return ke / N;
-  }
-
-  /**
-   * Attract only: every second or so a random particle and its nearest few neighbours bond for 1.5–3 s,
-   * drawn toward their middle, then let go. Returns how strongly bonds pull at this State (0 when tight
-   * or in another mode), and updates each bond's centre.
-   */
-  private updateBonds(slider: number, re: number): number {
-    const { mode, x, y, z, count: n } = this;
-    const on = mode.alwaysOn && mode.pointerGravity > 0 ? smooth(BOND_FROM, BOND_FROM + 0.25, slider) : 0;
-    const dt = 1 / 60;
-    for (const b of this.bonds) b.age += dt;
-    const live = this.bonds.filter((b) => b.age < b.life);
-    if (live.length !== this.bonds.length || !on) {
-      this.bondOf.fill(-1);
-      this.bonds = on ? live : [];
-      this.bonds.forEach((b, k) => {
-        b.members.forEach((m) => (this.bondOf[m] = k));
-      });
-    }
-    if (!on) return 0;
-    if (--this.nextBond <= 0 && this.bonds.length < BOND_MAX) {
-      this.nextBond = Math.round(60 * (0.6 + Math.random() * 1.2));
-      const seed = (Math.random() * n) | 0;
-      if (this.bondOf[seed] < 0) {
-        // The seed's nearest free neighbours, within a few spacings.
-        const size = 3 + ((Math.random() * 4) | 0);
-        const reach2 = (re * Math.sqrt(Math.PI / n) * 4) ** 2;
-        const near: [number, number][] = [];
-        for (let j = 0; j < n; j++) {
-          if (j === seed || this.bondOf[j] >= 0) continue;
-          const d2 = (x[j] - x[seed]) ** 2 + (y[j] - y[seed]) ** 2 + (z[j] - z[seed]) ** 2;
-          if (d2 < reach2) near.push([d2, j]);
-        }
-        near.sort((a, b) => a[0] - b[0]);
-        const members = [seed, ...near.slice(0, size - 1).map(([, j]) => j)];
-        if (members.length >= 3) {
-          const k = this.bonds.length;
-          this.bonds.push({ members, age: 0, life: 1.5 + Math.random() * 1.5, cx: 0, cy: 0, cz: 0 });
-          for (const m of members) this.bondOf[m] = k;
-        }
-      }
-    }
-    for (const b of this.bonds) {
-      let sx = 0;
-      let sy = 0;
-      let sz = 0;
-      for (const m of b.members) {
-        sx += x[m];
-        sy += y[m];
-        sz += z[m];
-      }
-      b.cx = sx / b.members.length;
-      b.cy = sy / b.members.length;
-      b.cz = sz / b.members.length;
-    }
-    return on;
   }
 
   /** Particle–particle repulsion, cohesion and viscosity over a uniform grid (half-neighbourhood scan). */
