@@ -46,3 +46,24 @@ it('Depth follows loudness: the same kick hits deeper in loud music than in quie
   };
   expect(spread(1.5)).toBeGreaterThan(spread(0.5) * 1.5);
 });
+
+it('now and then a kick surges the spin, which eases back to its set pace', () => {
+  const s = sim('water');
+  s.bpm = 120;
+  s.spinBars = 2;
+  for (let i = 0; i < 300; i++) s.step();
+  const pace = s.spinSpeed;
+  const spin = (): number => s.spinSpeed + s.spinSurge;
+  let surges = 0;
+  const kicks = 60;
+  for (let k = 0; k < kicks; k++) {
+    s.fire(1);
+    s.step();
+    if (spin() > pace * 1.5) surges++;
+    for (let i = 0; i < 59; i++) s.step();
+    // Back to its pace before the next kick.
+    expect(spin() / pace).toBeLessThan(1.1);
+  }
+  expect(surges).toBeGreaterThan(kicks * 0.15);
+  expect(surges).toBeLessThan(kicks * 0.6);
+});

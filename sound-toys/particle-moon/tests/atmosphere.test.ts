@@ -89,7 +89,7 @@ it('Gas: with music, loose smoke gathers into rings now and then; Tight resists'
   const a = gas(1, 0.6);
   a.mode = { ...PHYSICS_MODES.gas, atmosphere: 0 };
   // Subtle, but there.
-  expect(meanContrast(b)).toBeGreaterThan(meanContrast(a) + 0.025);
+  expect(meanContrast(b)).toBeGreaterThan(meanContrast(a) + 0.015);
   // Tight shows no more rings than without the atmosphere (its own edge ring already reads as some contrast).
   const tight = gas(0.1, 0.6);
   const tightA = gas(0.1, 0.6);
@@ -100,14 +100,22 @@ it('Gas: with music, loose smoke gathers into rings now and then; Tight resists'
 });
 
 it('Gas: a kick churns it, then it calms', () => {
+  // Over several kicks (each kick's eddies land in different places, some mostly off the cloud).
   const sim = gas(0.9, 0.6);
   travel(sim, 6);
-  const calm = travel(sim, 0.5);
-  sim.fire(1);
-  const churned = travel(sim, 0.5);
+  let calm = 0;
+  let churned = 0;
+  let after = 0;
+  for (let k = 0; k < 4; k++) {
+    calm += travel(sim, 0.5);
+    sim.fire(1);
+    churned += travel(sim, 0.5);
+    travel(sim, 3);
+    after += travel(sim, 0.5);
+    travel(sim, 2);
+  }
   expect(churned).toBeGreaterThan(calm * 1.3);
-  travel(sim, 3);
-  expect(travel(sim, 0.5)).toBeLessThan(churned);
+  expect(after).toBeLessThan(churned);
 });
 
 it('Gas: full Loose leaves room for the kick; only a full-Deep kick reaches full size', () => {

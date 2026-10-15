@@ -173,6 +173,15 @@ const ATMO_STIR_FADE = 1.5;
 const KICK_LIFT = 0.35;
 const KICK_LIFT_TAU = 0.3;
 const KICK_LIFT_DECAY = Math.exp(-1 / 60 / KICK_LIFT_TAU);
+/**
+ * Spin surges: a kick (while spinning) has this chance, scaled by its strength, of adding SURGE_GAIN ×
+ * the spin's speed for a moment (× SURGE_LIQUID in liquid).
+ */
+const SURGE_CHANCE = 0.35;
+const SURGE_GAIN = 1.5;
+const SURGE_LIQUID = 1.5;
+const SURGE_TAU = 0.25;
+const SURGE_DECAY = Math.exp(-1 / 60 / SURGE_TAU);
 const CENTRE_SPRING = 0.04;
 const CENTRE_DAMPING = 0.35;
 /** Water: seconds for a kick's ripple to cross the shape, at Tight and at Loose; and rings alive at once. */
@@ -364,6 +373,8 @@ export class Simulation {
   private morph = 0;
   /** Spin speed in radians per step. */
   spinSpeed = 0;
+  /** A kick's burst of extra spin (radians per step), fading over SURGE_TAU. */
+  spinSurge = 0;
 
   private readonly vx: Float32Array;
   private readonly vy: Float32Array;
@@ -585,6 +596,12 @@ export class Simulation {
    */
   fire(strength: number): void {
     this.pulse = Math.max(this.pulse, strength);
+    // Now and then a kick surges the spin: a burst of speed that fades quickly (SURGE_TAU) back to the
+    // set pace. Liquid, which swirls with the spin, takes it furthest.
+    if (this.spinBars && Math.random() < SURGE_CHANCE * Math.min(1, strength)) {
+      const surge = SURGE_GAIN * Math.min(1.2, strength) * lerp(1, SURGE_LIQUID, this.mode.ripple);
+      this.spinSurge += angularStep(this.spinBars, this.bpm) * surge;
+    }
     // A kick swings State toward Loose, as if the slider were flicked open and let go (see KICK_LIFT).
     this.kickLift = Math.max(this.kickLift, KICK_LIFT * Math.min(1, strength) * (1 - this.stateTarget));
     // Drive: the hit scaled by Depth (and how loud the music is). Past 1 it blasts; a hard pad at the
@@ -745,7 +762,10 @@ export class Simulation {
     // at its own rate (inner faster, each a little different), so they slide past one another.
     const targetSpin = angularStep(this.spinBars, this.bpm);
     this.spinSpeed += (targetSpin - this.spinSpeed) * 0.04;
-    this.spinAngle += this.spinSpeed;
+    this.spinSurge *= SURGE_DECAY;
+    // The spin this step: its pace plus any kick's surge.
+    const spinNow = this.spinSpeed + this.spinSurge;
+    this.spinAngle += spinNow;
     // Snare nudge: a quick push forward round the spin axis that springs back to where it was.
     const lastNudge = this.nudge;
     this.nudge += this.nudgeVel;
@@ -754,9 +774,7 @@ export class Simulation {
     const dNudge = (this.nudge - lastNudge) * (1 - fw);
     const M = rotation(GLOBE_AXIS, this.spinAngle + this.nudge);
     let dM: Mat3 | null =
-      gw > 0 && Math.abs(this.spinSpeed) > 1e-6 && fw < 1
-        ? rotation(GLOBE_AXIS, this.spinSpeed * gw * (1 - fw))
-        : null;
+      gw > 0 && Math.abs(spinNow) > 1e-6 && fw < 1 ? rotation(GLOBE_AXIS, spinNow * gw * (1 - fw)) : null;
     if (Math.abs(dNudge) > 1e-6) {
       // Round the screen normal for the disc, the tilted axis for the globe, blending through the morph.
       const nx = GLOBE_AXIS[0] * gw;
@@ -766,7 +784,7 @@ export class Simulation {
       const n = rotation([nx / nl, ny / nl, nz / nl], dNudge);
       dM = dM ? multiply(n, dM) : n;
     }
-    const swirl = this.spinSpeed * (1 - fw);
+    const swirl = spinNow * (1 - fw);
     const swirlGrip = SWIRL_GRIP * (1 - gw);
     const camera = R * CAMERA_DISTANCE;
 
