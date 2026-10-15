@@ -166,6 +166,13 @@ const ATMO_STIRRED_SPEED = 0.3;
 const ATMO_TIGHT = 0.2;
 const ATMO_STIR_SPEED = 10;
 const ATMO_STIR_FADE = 1.5;
+/**
+ * A kick swings State toward Loose by up to KICK_LIFT of the room left above the slider (a full kick),
+ * easing back with a time constant of KICK_LIFT_TAU s: the shape loosens on the hit and tightens again.
+ */
+const KICK_LIFT = 0.35;
+const KICK_LIFT_TAU = 0.3;
+const KICK_LIFT_DECAY = Math.exp(-1 / 60 / KICK_LIFT_TAU);
 const CENTRE_SPRING = 0.04;
 const CENTRE_DAMPING = 0.35;
 /** Water: seconds for a kick's ripple to cross the shape, at Tight and at Loose; and rings alive at once. */
@@ -319,6 +326,18 @@ export class Simulation {
   pole: -1 | 0 | 1 = 0;
   /** State slider, 0 = solid, 1 = cloud. */
   stateTarget = 0.5;
+  /**
+   * Depth's multiplier from how loud the music is (set by the app each frame; 1 = Depth as set): loud
+   * passages hit deeper, quiet ones shallower.
+   */
+  depthGain = 1;
+  /** Depth as the kicks feel it: the slider's, scaled by how loud the music is (capped at DEPTH_MAX). */
+  private get kickDepth(): number {
+    return Math.min(DEPTH_MAX, this.depth * this.depthGain);
+  }
+
+  /** A kick's swing toward Loose, on top of the State slider; it eases back (KICK_LIFT_TAU). */
+  private kickLift = 0;
   /**
    * Depth slider: multiplies every hit. Up to 1 it sets how far a full kick pushes the state toward
    * cloud; past 1 (to DEPTH_MAX) even an ordinary kick blasts the shape into vapor.
@@ -476,7 +495,7 @@ export class Simulation {
 
   /** The State slider as this mode uses it: capped at its loosest (see PhysicsMode.looseCap). */
   get slider(): number {
-    return Math.min(this.stateTarget * this.mode.looseRange, this.mode.looseCap);
+    return Math.min(Math.min(1, this.stateTarget + this.kickLift) * this.mode.looseRange, this.mode.looseCap);
   }
 
   /** Drawn dot radius (px, before perspective). Packed: dots overlap into a solid. Open: small points. */
@@ -566,9 +585,11 @@ export class Simulation {
    */
   fire(strength: number): void {
     this.pulse = Math.max(this.pulse, strength);
-    // Drive: the hit scaled by Depth. Past 1 it blasts; a hard pad at the default Depth and an
-    // ordinary kick at full Depth both reach DRIVE_MAX.
-    const drive = strength * this.depth;
+    // A kick swings State toward Loose, as if the slider were flicked open and let go (see KICK_LIFT).
+    this.kickLift = Math.max(this.kickLift, KICK_LIFT * Math.min(1, strength) * (1 - this.stateTarget));
+    // Drive: the hit scaled by Depth (and how loud the music is). Past 1 it blasts; a hard pad at the
+    // default Depth and an ordinary kick at full Depth both reach DRIVE_MAX.
+    const drive = strength * this.kickDepth;
     const gap = (this.steps - this.lastHitStep) / 60;
     // A blast needs time to recharge: a hit after a pause blasts fully, one straight after another only
     // partly, so steady kicks at Deep hit hard but the shape still comes back between beats.
@@ -583,6 +604,7 @@ export class Simulation {
   /** Advances one 1/60 s step. Returns mean kinetic energy (px²/step²) for the readout. */
   step(): number {
     this.steps++;
+    this.kickLift *= KICK_LIFT_DECAY;
     this.settle();
     const { mode, moon, pointer, count: N, x, y, z, vx, vy, vz } = this;
     // The State slider, capped at the mode's loosest (water stops at 75%).
@@ -592,7 +614,8 @@ export class Simulation {
     // Gas holds a kick's opening a little longer, so its churn has time to show.
     // Deep pumps: past the default Depth a kick lets go faster, so the shape snaps back.
     const deep =
-      Math.min(1, Math.max(0, (this.depth - PUMP_FROM) / (DEPTH_MAX - PUMP_FROM))) * (1 - this.mode.ripple);
+      Math.min(1, Math.max(0, (this.kickDepth - PUMP_FROM) / (DEPTH_MAX - PUMP_FROM))) *
+      (1 - this.mode.ripple);
     this.pulse *= lerp(lerp(0.925, 0.955, this.mode.vapor), PUMP_DECAY, deep);
     this.blast *= 0.965;
     // Water doesn't blast: a harder hit is a bigger ripple, and the droplets keep their hold so they return.
@@ -601,14 +624,14 @@ export class Simulation {
     // The kick opens the shape over a few frames (attack), then lets go at the usual rate.
     const openTarget = Math.min(
       1,
-      (this.pulse * this.depth * (1 - mode.ripple) + blast) * lerp(1, GAS_KICK_REACH, mode.vapor),
+      (this.pulse * this.kickDepth * (1 - mode.ripple) + blast) * lerp(1, GAS_KICK_REACH, mode.vapor),
     );
     this.open += (openTarget - this.open) * (openTarget > this.open ? KICK_ATTACK : 1);
     this.state = slider + (1 - slider) * this.open;
     const e = this.state;
     // In the blast range the shockwave grows much faster than the drive: that's what vaporizes.
     // `drive` and `shock` are this step's new hit (zero otherwise); its push is spread over KICK_STEPS.
-    const drive = this.pendingShock * this.depth;
+    const drive = this.pendingShock * this.kickDepth;
     const blastPush = lerp(BLAST_PUSH, GAS_BLAST_PUSH, mode.vapor);
     const shock = drive * lerp(1, blastPush, blast) * (R / 220) * 2.4;
     if (this.pendingShock) {
@@ -616,7 +639,7 @@ export class Simulation {
       this.kickStrength = this.pendingShock;
     }
     this.pendingShock = 0;
-    const kickDrive = this.kickLeft ? this.kickStrength * this.depth : 0;
+    const kickDrive = this.kickLeft ? this.kickStrength * this.kickDepth : 0;
     const shockGlow = Math.min(1, this.kickStrength * 0.35 + kickDrive * 0.5);
     const kickShock = this.kickLeft
       ? (kickDrive * lerp(1, blastPush, blast) * (R / 220) * 2.4) / KICK_STEPS
@@ -817,7 +840,7 @@ export class Simulation {
       if (over)
         this.stir = Math.max(this.stir, Math.min(1, Math.hypot(pointer.vx, pointer.vy) / ATMO_STIR_SPEED));
       // (By where the State slider sits, not how loose that makes the cloud: full Loose stirs fully.)
-      const pos = Math.min(1, this.stateTarget);
+      const pos = Math.min(1, this.stateTarget + this.kickLift);
       atmoLevel = atmo * this.atmoActivity(pos) * lerp(ATMO_TIGHT, 1, pos);
       // Slow, quicker with sound; a kick's turbulence churns faster still.
       this.atmoTime += 1 + ATMO_SOUND_PACE * this.sound + 2 * this.turbulence;

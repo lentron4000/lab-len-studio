@@ -21,6 +21,10 @@ import { bindSummoning } from './ui/summon';
 const STEP_MS = 1000 / 60;
 const MAX_STEPS_PER_FRAME = 3;
 const DEFAULT_BPM = 100;
+/** Depth × this in quiet music, up to × DEPTH_LOUD by LOUD_AT loudness (0–1, the listener's energy). */
+const DEPTH_QUIET = 0.5;
+const DEPTH_LOUD = 1.5;
+const LOUD_AT = 0.8;
 /** The opening waits at most this long for the web fonts (offline they never come). */
 const FONT_WAIT_MS = 3000;
 
@@ -372,6 +376,11 @@ class App implements ControlHost {
           : Math.min(1, 0.75 * f.shimmer + 0.25 * f.loud);
     this.sim.sound +=
       (target - this.sim.sound) * (1 - Math.exp(-dt / (target > this.sim.sound ? 0.03 : 0.25)));
+    // Depth follows the music's loudness: from DEPTH_QUIET of Depth in quiet passages to DEPTH_LOUD
+    // in loud ones (your Depth sits at a middling level). The demo's steady kick keeps Depth as set.
+    const amp = this.audio.mode === 'file' || this.audio.mode === 'live' ? f.energy : null;
+    const gain = amp === null ? 1 : DEPTH_QUIET + (DEPTH_LOUD - DEPTH_QUIET) * Math.min(1, amp / LOUD_AT);
+    this.sim.depthGain += (gain - this.sim.depthGain) * (1 - Math.exp(-dt / 0.3));
     this.director.update(f, dt, now, this.transport.readout(this.audio.mode).bpm);
   }
 

@@ -24,8 +24,6 @@ interface Look {
   moon: number;
   /** Seconds to glide to these values. */
   glide: number;
-  /** How far State swings open on each beat (0 for none), on top of the glide. */
-  swing: number;
 }
 
 /** Kicks per second at which the music counts as having a beat. */
@@ -50,9 +48,6 @@ const PAN_Y = 0.03;
 const ENERGY_SHIFT = 0.25;
 const AMBIENT_MIN = 6;
 const AMBIENT_EVERY = 30;
-/** How fast a beat's State swing closes again (s), and how much harder the bar's first beat swings. */
-const SWING_TAU = 0.3;
-const ACCENT = 1.4;
 /** Chance a groove or drop look spins the globe faster than a bar a turn (½ bar), and of those, a drop's share at a beat a turn. */
 const FAST_SPIN_CHANCE = 0.12;
 const FASTEST_SPIN_SHARE = 0.4;
@@ -105,7 +100,7 @@ export interface DirectorControls {
  * AI mode. Reads the music as one of five scenes and plays the controls the way a performer might:
  * drifting and loose through ambient passages, locked to the groove when the kick is in, tightening
  * and gathering through a build, pumping on the drop, letting go in the breakdown. Brightness and
- * energy shade every scene. Sliders glide, and with a beat State swings open on every beat; the look
+ * energy shade every scene. Sliders glide (each kick swings State open by itself, in the simulation); the look
  * (physics mode and shape) moves on every four bars or when the energy shifts. Anything the performer
  * touches is theirs for a while.
  */
@@ -129,7 +124,6 @@ export class Director {
   private lookEnergy = 0;
   private lookAt = -Infinity;
   private lookScene: Scene | null = null;
-  private swing = 0;
   private current: Look | null = null;
   private features: MusicFeatures | null = null;
   private sinceApply = 0;
@@ -175,13 +169,12 @@ export class Director {
     this.features = f;
     const k = 1 - Math.exp(-dt / look.glide);
     for (const id of Object.keys(this.value) as SliderId[]) this.value[id] += (look[id] - this.value[id]) * k;
-    this.swing *= Math.exp(-dt / SWING_TAU);
     this.panStep();
     this.sinceApply += dt;
     if (this.sinceApply >= 1 / APPLY_RATE) {
       this.sinceApply = 0;
       for (const id of Object.keys(this.value) as SliderId[]) {
-        const v = id === 'state' ? Math.min(1, this.value.state + this.swing) : this.value[id];
+        const v = this.value[id];
         if (this.free(id)) this.controls.setSlider(id, v);
       }
     }
@@ -193,13 +186,11 @@ export class Director {
     else if (!beat && now - this.lookAt > AMBIENT_MIN && this.energyShifted()) this.changeLook();
   }
 
-  /** A beat from the transport: State swings with it, and every four bars (or on an energy shift) the look moves on. */
+  /** A beat from the transport: every 12–32 bars (or on an energy shift) the look moves on. */
   beat(): void {
     if (!this.enabled || !this.current) return;
     this.beats++;
     this.lookBeats++;
-    const accent = this.beats % 4 === 1;
-    this.swing = Math.max(this.swing, this.current.swing * (accent ? ACCENT : 1));
     const bar = this.lookBeats % 4 === 0;
     if (
       this.lookBeats >= this.nextLook ||
@@ -347,7 +338,6 @@ export class Director {
           shapes: ['globe', 'disc'],
           moon: 0.5,
           glide: 4,
-          swing: 0,
         };
       case 'groove':
         return {
@@ -361,7 +351,6 @@ export class Director {
           shapes: ['disc', 'globe'],
           moon: 0.6,
           glide: 2,
-          swing: 0.35 * (0.5 + 0.5 * e),
         };
       case 'build':
         // Gathering: tightening, deepening and spinning faster the longer it builds.
@@ -375,7 +364,6 @@ export class Director {
           shapes: ['disc', 'globe'],
           moon: 0.7,
           glide: 1.5,
-          swing: 0.3 * through,
         };
       case 'drop':
         // Tight, deep and pumping on every kick.
@@ -390,7 +378,6 @@ export class Director {
           shapes: ['disc', 'globe'],
           moon: 0.8,
           glide: 0.3,
-          swing: 0.5,
         };
       case 'breakdown':
         return {
@@ -403,7 +390,6 @@ export class Director {
           shapes: ['disc', 'globe'],
           moon: 0.35,
           glide: 3,
-          swing: 0,
         };
     }
   }

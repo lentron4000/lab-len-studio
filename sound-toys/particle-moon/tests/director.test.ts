@@ -185,21 +185,6 @@ describe('AI mode', () => {
     for (let i = 1; i < pans.length; i++) expect(Math.abs(pans[i][0] - pans[i - 1][0])).toBeLessThan(0.002);
   });
 
-  it('swings State open on each beat in a groove, and not in ambient music', () => {
-    const { director, sliders } = setup();
-    play(director, groove, 10, 0, 124);
-    const before = sliders.get('state') ?? 0;
-    director.beat();
-    play(director, groove, 0.05, 10, 124);
-    expect((sliders.get('state') ?? 0) - before).toBeGreaterThan(0.08);
-    const ambientRun = setup();
-    play(ambientRun.director, ambient, 10, 0);
-    const still = ambientRun.sliders.get('state') ?? 0;
-    ambientRun.director.beat();
-    play(ambientRun.director, ambient, 0.05, 10);
-    expect(Math.abs((ambientRun.sliders.get('state') ?? 0) - still)).toBeLessThan(0.02);
-  });
-
   it('keeps deep Depth for a strong kick', () => {
     const weak = setup();
     play(weak.director, breakdown, 8, 0);
