@@ -76,9 +76,15 @@ describe('AI mode', () => {
 
   it('plays ambient music well into Loose, and drops tight and deep', () => {
     const { director, sliders, options } = setup();
-    play(director, ambient, 30, 0);
+    play(director, ambient, 10, 0);
+    // State wanders (moves come and go), so judge it over the passage.
+    let sum = 0;
+    for (let k = 0; k < 20; k++) {
+      play(director, ambient, 1, 10 + k);
+      sum += sliders.get('state') ?? 0;
+    }
     expect(['water', 'gas', 'attract']).toContain(options.get('mode'));
-    expect(sliders.get('state')).toBeGreaterThan(0.55);
+    expect(sum / 20).toBeGreaterThan(0.5);
     play(director, groove, 10, 30);
     play(director, breakdown, 8, 40);
     play(director, drop, 4, 48);
@@ -201,7 +207,7 @@ describe('AI mode', () => {
     play(director, groove, 10, 0, 124);
     const moons: string[] = [];
     let t = 10;
-    for (let beat = 0; beat < 4 * 200; beat++) {
+    for (let beat = 0; beat < 4 * 400; beat++) {
       const before = [options.get('moon'), options.get('mode'), options.get('shape')];
       director.beat();
       play(director, groove, 60 / 124, t, 124);
@@ -213,5 +219,28 @@ describe('AI mode', () => {
     }
     expect(moons).toContain('on');
     expect(moons).toContain('off');
+  });
+
+  it("keeps State and Depth moving phrase by phrase in a groove (it doesn't park)", () => {
+    const { director, sliders } = setup();
+    play(director, groove, 10, 0, 124);
+    const states: number[] = [];
+    const depths: number[] = [];
+    let t = 10;
+    for (let bar = 0; bar < 64; bar++) {
+      for (let b = 0; b < 4; b++) {
+        director.beat();
+        play(director, groove, 60 / 124, t, 124);
+        t += 60 / 124;
+      }
+      states.push(sliders.get('state') ?? 0);
+      depths.push(sliders.get('depth') ?? 0);
+    }
+    const spread = (a: number[]): number => {
+      const m = a.reduce((x, y) => x + y, 0) / a.length;
+      return Math.sqrt(a.reduce((x, y) => x + (y - m) ** 2, 0) / a.length);
+    };
+    expect(spread(states)).toBeGreaterThan(0.08);
+    expect(spread(depths)).toBeGreaterThan(0.03);
   });
 });

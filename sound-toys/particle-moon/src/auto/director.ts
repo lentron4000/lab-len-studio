@@ -26,6 +26,43 @@ interface Look {
   glide: number;
 }
 
+/**
+ * A move: a slider's offset from its scene value, easing from one place to the next (smoothstep).
+ * The director keeps State and Depth moving with these, phrase by phrase, so they never just park.
+ */
+class Move {
+  private from = 0;
+  private to = 0;
+  private start = 0;
+  private length = 1;
+
+  at(now: number): number {
+    const t = Math.min(1, Math.max(0, (now - this.start) / this.length));
+    return this.from + (this.to - this.from) * t * t * (3 - 2 * t);
+  }
+
+  go(now: number, to: number, seconds: number): void {
+    this.from = this.at(now);
+    this.to = to;
+    this.start = now;
+    this.length = Math.max(0.05, seconds);
+  }
+}
+
+/**
+ * Moves: with a beat, a new one every MOVE_BARS bars (sooner when the energy is up), easing over
+ * 1–4 bars; without, every MOVE_SECONDS. State moves up to ±MOVE_STATE round its scene value, and
+ * GESTURE of the time sweeps hard toward Tight or Loose (±GESTURE_STATE) and back a bar or two later.
+ * Depth moves up to ±MOVE_DEPTH, never into Deep unless the scene is already there (strong kicks).
+ */
+const MOVE_BARS: readonly [number, number] = [2, 8];
+const MOVE_SECONDS: readonly [number, number] = [6, 20];
+const MOVE_STATE = 0.3;
+const GESTURE = 0.2;
+const GESTURE_STATE = 0.6;
+const MOVE_DEPTH = 0.2;
+const DEEP_FROM = 0.75;
+
 /** Kicks per second at which the music counts as having a beat. */
 const BEAT_RATE = 0.9;
 /** Below this, the beat has gone. */
@@ -100,9 +137,10 @@ export interface DirectorControls {
  * AI mode. Reads the music as one of five scenes and plays the controls the way a performer might:
  * drifting and loose through ambient passages, locked to the groove when the kick is in, tightening
  * and gathering through a build, pumping on the drop, letting go in the breakdown. Brightness and
- * energy shade every scene. Sliders glide (each kick swings State open by itself, in the simulation); the look
- * (physics mode and shape) moves on every four bars or when the energy shifts. Anything the performer
- * touches is theirs for a while.
+ * energy shade every scene. Sliders glide to each scene's values, and State and Depth keep moving round
+ * them phrase by phrase (see Move), with the odd big sweep; each kick also swings State open by itself,
+ * in the simulation. The look (physics mode and shape) moves on every 12–32 bars or when the energy
+ * shifts. Anything the performer touches is theirs for a while.
  */
 export class Director {
   enabled = false;
@@ -127,6 +165,13 @@ export class Director {
   private current: Look | null = null;
   private features: MusicFeatures | null = null;
   private sinceApply = 0;
+  /** State and Depth's moves round their scene values, and when the next is due (beats, or seconds without a beat). */
+  private readonly moveState = new Move();
+  private readonly moveDepth = new Move();
+  private nextMoveBeat = 0;
+  private nextMoveAt = 0;
+  /** After a gesture, the move that brings it back is due sooner. */
+  private returning = false;
   private readonly value: Record<SliderId, number> = {
     state: 0,
     depth: 0.5,
@@ -148,6 +193,8 @@ export class Director {
     this.chosen.mode = this.chosen.shape = this.chosen.moon = this.chosen.pole = '';
     this.lookScene = null;
     this.lookBeats = 0;
+    this.nextMoveBeat = 0;
+    this.nextMoveAt = 0;
     // Pan from wherever the shape sits now.
     this.pan.start = -Infinity;
     this.enabled = true;
@@ -174,13 +221,27 @@ export class Director {
     if (this.sinceApply >= 1 / APPLY_RATE) {
       this.sinceApply = 0;
       for (const id of Object.keys(this.value) as SliderId[]) {
-        const v = this.value[id];
+        let v = this.value[id];
+        if (id === 'state') {
+          // (A drop stays tight: there, moves only ever tighten.)
+          const move = this.moveState.at(now);
+          v = Math.min(1, Math.max(0, v + (this.scene === 'drop' ? Math.min(0, move) : move)));
+        }
+        if (id === 'depth') {
+          // Deep stays for strong kicks: a move can't carry Depth there on its own, nor out of it.
+          if (v < DEEP_FROM) v = Math.min(DEEP_FROM, Math.max(0, v + this.moveDepth.at(now)));
+        }
         if (this.free(id)) this.controls.setSlider(id, v);
       }
     }
     // A new scene that doesn't suit the current look changes it at once; ambient music changes on its own clock.
     const suits = look.modes.includes(this.chosen.mode) && look.shapes.includes(this.chosen.shape);
     const beat = f.kickRate >= BEAT_RATE;
+    // Without a beat, moves come on a clock (slower, as the music drifts).
+    if (!beat && now >= this.nextMoveAt) {
+      this.planMove(MOVE_SECONDS[0] + Math.random() * (MOVE_SECONDS[1] - MOVE_SECONDS[0]), 0.5, false);
+      this.nextMoveAt = now + MOVE_SECONDS[0] + Math.random() * (MOVE_SECONDS[1] - MOVE_SECONDS[0]);
+    }
     if (this.lookScene !== this.scene && !suits) this.changeLook();
     else if (!beat && now - this.lookAt > AMBIENT_EVERY) this.changeLook();
     else if (!beat && now - this.lookAt > AMBIENT_MIN && this.energyShifted()) this.changeLook();
@@ -192,11 +253,46 @@ export class Director {
     this.beats++;
     this.lookBeats++;
     const bar = this.lookBeats % 4 === 0;
+    if (this.beats % 4 === 0 && this.beats >= this.nextMoveBeat) {
+      // A new move on the bar: sooner and livelier when the energy is up.
+      const f = this.features;
+      const e = f ? Math.min(1, f.energy / Math.max(0.2, f.baseline * 1.4)) : 0.5;
+      const barSeconds = (4 * 60) / (this.bpm || 120);
+      const gesture = this.planMove(barSeconds * (1 + Math.floor(Math.random() * 4)), 0.6 + 0.4 * e);
+      const bars = gesture
+        ? 1 + Math.floor(Math.random() * 2)
+        : Math.round(MOVE_BARS[1] - (MOVE_BARS[1] - MOVE_BARS[0]) * e * Math.random());
+      this.nextMoveBeat = this.beats + 4 * bars;
+      this.nextMoveAt = this.now + bars * barSeconds;
+    }
     if (
       this.lookBeats >= this.nextLook ||
       (bar && this.lookBeats >= SHIFT_MIN_BARS * 4 && this.energyShifted())
     )
       this.changeLook();
+  }
+
+  /**
+   * Starts the next move for State and Depth, easing over `seconds`; `reach` (0–1) scales how far.
+   * Returns whether it's a gesture (a hard sweep that the next move brings back; only with a beat).
+   */
+  private planMove(seconds: number, reach: number, gestures = true): boolean {
+    const span = (k: number): number => (Math.random() * 2 - 1) * k * reach;
+    let gesture = false;
+    let state: number;
+    if (this.returning) {
+      // Back from a sweep, toward the scene's own value.
+      state = span(MOVE_STATE * 0.4);
+      this.returning = false;
+    } else if (gestures && Math.random() < GESTURE) {
+      // A sweep: hard toward whichever end is further from where State sits.
+      const base = this.value.state;
+      state = (base < 0.5 ? 1 : -1) * GESTURE_STATE * (0.7 + 0.3 * reach);
+      gesture = this.returning = true;
+    } else state = span(MOVE_STATE);
+    this.moveState.go(this.now, state, gesture ? seconds * 0.5 : seconds);
+    this.moveDepth.go(this.now, span(MOVE_DEPTH), seconds);
+    return gesture;
   }
 
   /** Slow pans: over each PAN_BARS the shape eases to a new spot on screen. */
