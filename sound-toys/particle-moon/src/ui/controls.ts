@@ -18,12 +18,16 @@ function depthFromSlider(value: number): number {
 }
 
 /** What the panel needs from the app. */
+/** If the controls haven't been opened this long after starting, the Controls button pulses for attention. */
+const BECKON_MS = 10_000;
+
 export interface ControlHost {
   readonly sim: Simulation;
   readonly transport: Transport;
   readonly audio: AudioEngine;
   pulseOn: 'kick' | 'beat';
-  fire(strength: number): void;
+  /** `played`: by the performer (lands at once, no wind-up). */
+  fire(strength: number, played?: boolean): void;
   flashBeat(): void;
   setLook(look: Look): void;
   /** Controls hidden: clear the screen for projection. */
@@ -94,24 +98,23 @@ export function bindControls(host: ControlHost): {
 
   onRadio('shape', (v) => {
     sim.shapeTarget = v === 'globe' ? 1 : 0;
+    // A globe standing still looks like a disc: set it turning, at the slowest spin.
+    if (v === 'globe' && spin.value === '0') {
+      spin.value = '1';
+      paintRange(spin);
+      refreshTempoLabels();
+    }
     host.relayout();
   });
+  // Open on whichever shape is checked (the disc), already formed: no morph from the disc.
+  sim.shapeTarget = radios('shape').find((r) => r.checked)?.value === 'globe' ? 1 : 0;
+  sim.snapShape();
   onRadio('night', (v) => {
     host.setLook(v as Look);
   });
 
-  const desc = byId('desc');
-  const POLE_DESC = {
-    attract: 'The pointer and the moon are opposite poles: particles are pulled in and pack around them.',
-    repel: 'The pointer and the moon are like poles: particles are pushed aside and close in behind them.',
-  };
-  const describe = (): void => {
-    const pole = sim.pole > 0 ? POLE_DESC.attract : sim.pole < 0 ? POLE_DESC.repel : '';
-    desc.textContent = pole ? `${sim.mode.description} ${pole}` : sim.mode.description;
-  };
   onRadio('mode', (v) => {
     sim.mode = PHYSICS_MODES[v as PhysicsModeId];
-    describe();
   });
   // Attract and Repel: toggles on top of the physics, at most one at a time.
   const poles = Array.from(document.querySelectorAll<HTMLInputElement>('input[name="pole"]'));
@@ -120,10 +123,8 @@ export function bindControls(host: ControlHost): {
       if (box.checked) for (const other of poles) if (other !== box) other.checked = false;
       const on = poles.find((p) => p.checked)?.value;
       sim.pole = on === 'attract' ? 1 : on === 'repel' ? -1 : 0;
-      describe();
     });
   }
-  describe();
 
   const spin = byId('spin', HTMLInputElement);
   const spinOut = byId('spin-out');
@@ -144,11 +145,16 @@ export function bindControls(host: ControlHost): {
 
   const orbitRow = byId('orbit-row');
   const forceRow = byId('force-row');
+  // The moon's own controls stay in place, greyed out (still usable) while it's off.
+  const moonRows = (): void => {
+    orbitRow.classList.toggle('off', !sim.moon.enabled);
+    forceRow.classList.toggle('off', !sim.moon.enabled);
+  };
   onRadio('moon', (v) => {
     sim.moon.enabled = v === 'on';
-    orbitRow.hidden = forceRow.hidden = !sim.moon.enabled;
-    host.relayout();
+    moonRows();
   });
+  moonRows();
   const forceOut = byId('force-out');
   onInput('mforce', (el) => {
     sim.moon.force = Number(el.value) / 100;
@@ -194,7 +200,7 @@ export function bindControls(host: ControlHost): {
     host.pulseOn = v === 'beat' ? 'beat' : 'kick';
   });
   byId('kick').addEventListener('click', () => {
-    host.fire(1);
+    host.fire(1, true);
   });
   onInput('depth', (el) => {
     sim.depth = depthFromSlider(Number(el.value));
@@ -208,6 +214,11 @@ export function bindControls(host: ControlHost): {
   const showBtn = byId('show-ctl', HTMLButtonElement);
   /** `bare` (the default when closing) also clears the header and cursor, for projection. */
   const setPanel = (open: boolean, focus = true, bare = !open): void => {
+    if (open) {
+      // Found them: no more beckoning.
+      window.clearTimeout(beckonTimer);
+      showBtn.classList.remove('beckon');
+    }
     panel.hidden = !open;
     hideBtn.hidden = !open;
     showBtn.hidden = open;
@@ -215,6 +226,10 @@ export function bindControls(host: ControlHost): {
     host.setBare(bare);
     host.relayout();
   };
+  // Not opened within BECKON_MS of starting: the Controls button pulses (pointer moving or not) until it is.
+  const beckonTimer = window.setTimeout(() => {
+    if (panel.hidden) showBtn.classList.add('beckon');
+  }, BECKON_MS);
   hideBtn.addEventListener('click', () => {
     setPanel(false);
   });
@@ -232,9 +247,9 @@ export function bindControls(host: ControlHost): {
 
   refreshTempoLabels();
 
-  /** N cycles day → night → ritual, following whichever radio is checked. */
+  /** N cycles through the looks on offer (the shown radios), from whichever is checked. */
   function nextLook(): Look {
-    const looks = radios('night');
+    const looks = radios('night').filter((r) => !r.closest('label')?.hidden);
     const i = looks.findIndex((r) => r.checked);
     return looks[(i + 1) % looks.length].value as Look;
   }

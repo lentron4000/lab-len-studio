@@ -22,15 +22,15 @@
           new URLSearchParams(location.search).get('m') || (fallback.charAt(0) === '%' ? '' : fallback)
         ).toLowerCase();
         var root = document.documentElement;
-        // A mode that can switch looks opens on the last one chosen.
-        if (m !== 'night' && m !== 'ritual') {
-          try {
-            var saved = localStorage.getItem('sound-toy:night');
-            m = saved === '1' ? 'night' : saved || m;
-          } catch (e) {}
-        }
-        if (m === 'night' || m === 'ritual') root.setAttribute('data-night', '');
+        if (m === 'party') m = 'night'; // Party's look is 'night'
+        // A mode that can switch looks opens on Day or Night, as the system is set.
+        if (m !== 'night' && m !== 'ritual' && m !== 'wire' && m !== 'refract')
+          m = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'day';
+        if (m === 'night' || m === 'ritual' || m === 'wire' || m === 'refract')
+          root.setAttribute('data-night', '');
         if (m === 'ritual') root.setAttribute('data-ritual', '');
+        if (m === 'wire') root.setAttribute('data-wire', '');
+        if (m === 'refract') root.setAttribute('data-refract', '');
         if (m === 'dark') root.setAttribute('data-dark', '');
       })();
     </script>
@@ -48,7 +48,13 @@
         background: #150e27;
       }
       html.preload[data-ritual] body {
-        background: #000000;
+        background: #d20c16;
+      }
+      html.preload[data-wire] body {
+        background: #0b0614;
+      }
+      html.preload[data-refract] body {
+        background: #08080a;
       }
       /* The blackout veil starts clear: without this, until the stylesheet lands it fades in from black. */
       .veil {
@@ -56,7 +62,8 @@
       }
       html.preload .top,
       html.preload #panel,
-      html.preload .tab {
+      html.preload .tab,
+      html.preload .keys {
         opacity: 0;
         visibility: hidden;
       }
@@ -106,6 +113,7 @@
         <div>E<sub>k</sub> <b id="ek">0.00</b></div>
         <div>n <b id="nn">0</b></div>
         <div class="bpm"><i id="beat"></i>bpm <b id="bpm">–</b></div>
+        <div class="midi"><i id="midi-dot" title="MIDI not connected"></i>midi</div>
       </div>
     </div>
 
@@ -122,6 +130,32 @@
     >
       Controls <kbd>H</kbd>
     </button>
+    <!-- Show: four buttons bottom left, styled as the Controls tab, for the keyboard first (F, B, A, R); they fade when the pointer rests. -->
+    <div class="keys" role="group" aria-label="Show">
+      <button class="key" id="fullscreen" type="button" aria-pressed="false" title="Fullscreen (F)">
+        Fullscreen <kbd>F</kbd>
+      </button>
+      <button class="key hit" id="blackout" type="button" aria-pressed="false" title="Fade to black (B)">
+        Blackout <kbd>B</kbd>
+      </button>
+      <button
+        class="key"
+        id="auto"
+        type="button"
+        aria-pressed="false"
+        title="AI mode: let the music play the controls (A)"
+      >
+        Auto <kbd>A</kbd>
+      </button>
+      <button
+        class="key"
+        id="view-reset"
+        type="button"
+        title="Camera back to straight on (R); drag the shape to orbit"
+      >
+        Reset view <kbd>R</kbd>
+      </button>
+    </div>
     <div class="panel" id="panel">
       <div class="group group-scene">
         <div class="row">
@@ -165,6 +199,12 @@
                   >Ritual</span
                 ></label
               >
+              <label><input type="radio" name="night" id="night-wire" value="wire" /><span>Wire</span></label>
+              <label
+                ><input type="radio" name="night" id="night-refract" value="refract" /><span
+                  >Refract</span
+                ></label
+              >
             </div>
           </fieldset>
         </div>
@@ -197,7 +237,6 @@
             </div>
           </fieldset>
         </div>
-        <p class="desc" id="desc"></p>
       </div>
       <div class="group group-midi">
         <div class="row">
@@ -207,26 +246,6 @@
             <button class="btn" id="midi-map" type="button" aria-pressed="false" disabled>Map</button>
             <button class="btn" id="midi-reset" type="button" hidden>Reset map</button>
             <span id="midi-status">Plug in a controller, then Connect.</span>
-          </div>
-        </div>
-        <div class="row">
-          <div class="label">Show</div>
-          <div class="filectl">
-            <button class="btn" id="fullscreen" type="button" aria-pressed="false">
-              Fullscreen <kbd>F</kbd>
-            </button>
-            <button class="hit" id="blackout" type="button" aria-pressed="false" title="Fade to black (B)">
-              Blackout <kbd>B</kbd>
-            </button>
-            <button
-              class="btn"
-              id="auto"
-              type="button"
-              aria-pressed="false"
-              title="AI mode: let the music play the controls (A)"
-            >
-              Auto <kbd>A</kbd>
-            </button>
           </div>
         </div>
         <div class="row" id="summon-row">
@@ -264,14 +283,14 @@
             </div>
           </fieldset>
         </div>
-        <div class="row" id="orbit-row" hidden>
+        <div class="row" id="orbit-row">
           <div class="label" id="orbit-label">Orbit</div>
           <div class="slider">
             <input id="orbit" type="range" min="0" max="8" step="1" value="3" aria-labelledby="orbit-label" />
             <output id="orbit-out" class="spin-out" for="orbit">8 bars</output>
           </div>
         </div>
-        <div class="row" id="force-row" hidden>
+        <div class="row" id="force-row">
           <div class="label" id="force-label">Force</div>
           <div class="slider">
             <input id="mforce" type="range" min="0" max="200" value="100" aria-labelledby="force-label" />

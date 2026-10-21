@@ -5,7 +5,8 @@
 
 /* Layout: the shape fills the screen; one floating control panel at the bottom.
    Day is ink on white; Night (data-dark on <html>) is day inverted; Party (data-night) follows the
-   canvas into a dusk palette, and ritual (data-ritual as well) into black. */
+   canvas into a dusk palette, ritual (data-ritual as well) into blood red, and wire (data-wire) into
+   synthwave neon on near-black. */
 *,
 *::before,
 *::after {
@@ -48,14 +49,32 @@ body {
   --focus: #8fb0ff;
   color-scheme: dark;
 }
-/* Ritual: black, bone text, blood-red accents */
+/* Ritual: inverted, black on the resting blood red */
 :root[data-ritual] {
-  --paper: #000000;
-  --ink: #eadfd0;
-  --muted: #8f7469;
-  --line: #2c1214;
-  --panel: rgba(6, 1, 2, 0.82);
-  --focus: #ff3b1f;
+  --paper: #d20c16;
+  --ink: #000000;
+  --muted: #4a0306;
+  --line: #8a070d;
+  --panel: rgba(210, 12, 22, 0.86);
+  --focus: #000000;
+}
+/* Refract: VHS, white and sky blue on black */
+:root[data-refract] {
+  --paper: #08080a;
+  --ink: #f2f4f6;
+  --muted: #5ca8f0;
+  --line: #1c2a38;
+  --panel: rgba(8, 8, 10, 0.86);
+  --focus: #5ca8f0;
+}
+/* Wire: synthwave, neon on the near-black violet */
+:root[data-wire] {
+  --paper: #0b0614;
+  --ink: #ffd6f6;
+  --muted: #a77fc4;
+  --line: #2a1640;
+  --panel: rgba(11, 6, 20, 0.82);
+  --focus: #22e4ff;
 }
 html,
 body {
@@ -80,6 +99,34 @@ canvas#c {
       8 8,
     crosshair;
 }
+/* The cursor follows the look (Party keeps Day's). Night: Day's inverted. */
+:root[data-dark] canvas#c {
+  cursor:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16'%3E%3Ccircle cx='8' cy='8' r='7' fill='%23000' stroke='%23fff' stroke-width='1'/%3E%3C/svg%3E")
+      8 8,
+    crosshair;
+}
+/* Ritual: the blood red, edged in black. */
+:root[data-ritual] canvas#c {
+  cursor:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16'%3E%3Ccircle cx='8' cy='8' r='7' fill='%23d20c16' stroke='%23000' stroke-width='1'/%3E%3C/svg%3E")
+      8 8,
+    crosshair;
+}
+/* Wire: the dark it glows on, edged in its resting violet. */
+:root[data-wire] canvas#c {
+  cursor:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16'%3E%3Ccircle cx='8' cy='8' r='7' fill='%230b0614' stroke='%239d4dff' stroke-width='1'/%3E%3C/svg%3E")
+      8 8,
+    crosshair;
+}
+/* Refract: the black, edged in its sky blue. */
+:root[data-refract] canvas#c {
+  cursor:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16'%3E%3Ccircle cx='8' cy='8' r='7' fill='%2308080a' stroke='%235ca8f0' stroke-width='1'/%3E%3C/svg%3E")
+      8 8,
+    crosshair;
+}
 /* Blackout (B): fades the shape to black. Sits above the canvas, below the controls. */
 .veil {
   position: fixed;
@@ -92,8 +139,9 @@ canvas#c {
 .blackout .veil {
   opacity: 1;
 }
-/* Bare (controls hidden): nothing but the shape. The cursor and Controls button
-   come back for a moment when the pointer moves. */
+/* Bare (controls hidden): the shape under the header. The cursor comes back for a moment when the
+   pointer moves; the Controls button and Show keys too, together and a little longer (BUTTONS_MS),
+   and on a Show shortcut. With the controls open, the Show keys stay. */
 .btn kbd,
 .hit kbd {
   color: inherit;
@@ -106,19 +154,66 @@ canvas#c {
   color: var(--paper);
 }
 .top,
-.tab-show {
+.tab-show,
+.keys {
   transition: opacity 0.4s ease;
 }
-.bare .top {
-  opacity: 0;
-  visibility: hidden;
-  transition:
-    opacity 0.4s ease,
-    visibility 0s 0.4s;
-}
-.bare:not(.reveal) .tab-show {
+.bare:not(.buttons-up) .tab-show,
+.bare:not(.buttons-up) .keys:not(:focus-within) {
   opacity: 0;
   pointer-events: none;
+}
+/* Show keys: a 2×2 cluster bottom left, each styled as the Controls tab (a word and its key). */
+.keys {
+  position: fixed;
+  z-index: 2;
+  left: 16px;
+  /* (Lifted onto the open panel's top edge when it reaches under them: see placePanelTab.) */
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 16px + var(--keys-lift, 0px));
+  display: grid;
+  grid-template-columns: repeat(2, max-content);
+  gap: 6px;
+}
+/* (`.keys .key` throughout: Blackout is also a `.hit`, for MIDI mapping, and must not take its pill look.) */
+.keys .key {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font: 500 12px var(--sans);
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+.keys .key kbd {
+  font: 11px var(--mono);
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 0 4px;
+  margin-left: 4px;
+  opacity: 1;
+}
+.keys .key:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+/* Its shortcut just pressed: lit for a moment (KEY_FLASH_MS). */
+.keys .key.flash {
+  border-color: var(--ink);
+  box-shadow: 0 0 0 1px var(--ink);
+}
+/* On (Blackout, Auto, Fullscreen): filled. */
+.keys .key[aria-pressed='true'] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+}
+.keys .key[aria-pressed='true'] kbd {
+  color: var(--paper);
+  border-color: currentColor;
 }
 .bare:not(.reveal) canvas#c {
   cursor: none;
@@ -174,8 +269,16 @@ canvas#c {
   --brand: #b7ff9a;
   filter: drop-shadow(0 0 6px rgba(183, 255, 154, 0.5));
 }
+:root[data-refract] .brand {
+  --brand: #f2f4f6;
+  filter: none;
+}
+:root[data-wire] .brand {
+  --brand: #ff2bd6;
+  filter: drop-shadow(0 0 6px rgba(255, 43, 214, 0.6));
+}
 :root[data-ritual] .brand {
-  --brand: var(--muted);
+  --brand: var(--ink);
   filter: none;
 }
 @media (max-width: 640px) {
@@ -245,6 +348,24 @@ canvas#c {
   border-radius: 3px;
   padding: 0 4px;
   margin-left: 4px;
+}
+/* Beckoning (not opened yet, see BECKON_MS): fades out and in, slowly, whether the pointer moves or not. */
+.tab-show.beckon,
+.bare:not(.buttons-up) .tab-show.beckon {
+  opacity: 1;
+  pointer-events: auto;
+  animation: beckon 2.4s ease-in-out infinite;
+}
+@keyframes beckon {
+  50% {
+    opacity: 0.15;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tab-show.beckon,
+  .bare:not(.buttons-up) .tab-show.beckon {
+    animation: none;
+  }
 }
 .tab-show {
   right: 16px;
@@ -464,13 +585,9 @@ legend {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
-.desc {
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.45;
-  color: var(--muted);
-  padding-left: 80px;
-  max-width: 62ch;
+/* A control that waits on another (the moon's, while it's off): greyed out, still usable. */
+.row.off {
+  opacity: 0.4;
 }
 .spin-out {
   font-family: var(--mono);
@@ -612,6 +729,25 @@ legend {
   background: var(--ink);
   opacity: 0.12;
 }
+/* MIDI light: red until a controller is connected, then green. */
+.midi {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.midi i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #e5484d;
+}
+.midi i[data-on] {
+  background: #30a46c;
+}
+/* (Ritual's ground is red: the light gets a black edge there.) */
+:root[data-ritual] .midi i {
+  box-shadow: 0 0 0 1px #000;
+}
 .filectl {
   display: flex;
   flex-wrap: wrap;
@@ -679,15 +815,13 @@ legend {
   .hit {
     padding-inline: 9px;
   }
-  .desc {
-    padding-left: 64px;
-  }
 }
 
 /* Opening: once the layout is final, the header and controls fade in as the shape grows. */
 html.intro .top,
 html.intro #panel,
-html.intro .tab {
+html.intro .tab,
+html.intro .keys {
   transition:
     opacity 0.9s ease,
     visibility 0s !important;

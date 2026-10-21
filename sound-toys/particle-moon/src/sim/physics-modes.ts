@@ -65,7 +65,6 @@ export interface PhysicsMode {
    * (still when nothing stirs it; see the simulation's ATMO_ constants).
    */
   atmosphere: number;
-  description: string;
 }
 
 /** The packed state every mode starts from. */
@@ -98,8 +97,6 @@ export const PHYSICS_MODES: Record<PhysicsModeId, PhysicsMode> = {
     looseRange: 0.55,
     sizeGain: 0.9 / 0.55, // full Loose looks as loose as a state of 0.9, while sitting at 0.55
     loosePointer: 1,
-    description:
-      'Gas. It drifts slowly, like smoke, and now and then gathers into rings that form and fade in different places. Music stirs it, a kick swells and churns it, and Tight holds it still.',
   },
   water: {
     spring: 0.006,
@@ -127,7 +124,5 @@ export const PHYSICS_MODES: Record<PhysicsModeId, PhysicsMode> = {
     looseRange: 1,
     sizeGain: 1,
     loosePointer: 0.35,
-    description:
-      'Liquid. No fixed positions, only cohesion and surface tension. It swirls, pulls into tendrils and pools back together.',
   },
 };

@@ -16,7 +16,7 @@ export function computeViewport(
   header: HTMLElement,
   panel: HTMLElement,
 ): Viewport {
-  // Controls hidden: the header is hidden too, so the shape centres on the whole screen.
+  // Controls hidden: the shape centres on the whole screen (the header stays, over its top margin).
   if (panel.hidden) {
     const radius = Math.max(50, Math.min(width * 0.3, (height - 2 * BARE_MARGIN) * 0.32));
     return { width, height, radius, cx: width / 2, cy: height / 2 };
@@ -28,9 +28,16 @@ export function computeViewport(
   return { width, height, radius, cx: width / 2, cy: top + (height - reserved - top) / 2 };
 }
 
-/** Publishes the panel's size to CSS so the Hide tab can sit on its top edge. */
+/**
+ * Publishes the panel's size to CSS so the Hide tab can sit on its top edge, and lifts the Show keys
+ * onto that edge too when the open panel reaches under them (bottom left).
+ */
 export function placePanelTab(panel: HTMLElement): void {
   const root = document.documentElement.style;
   root.setProperty('--panel-h', `${panel.offsetHeight}px`);
   root.setProperty('--panel-w', `${panel.offsetWidth}px`);
+  const keys = document.querySelector<HTMLElement>('.keys');
+  const under =
+    !panel.hidden && keys !== null && panel.getBoundingClientRect().left < 16 + keys.offsetWidth + 12;
+  root.setProperty('--keys-lift', under ? `${panel.offsetHeight + 8}px` : '0px');
 }
