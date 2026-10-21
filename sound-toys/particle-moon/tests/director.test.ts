@@ -8,20 +8,23 @@ function setup(): {
   options: Map<string, string>;
   hits: number[];
   pans: [number, number][];
+  aims: [yaw: number, pitch: number, seconds: number][];
 } {
   const sliders = new Map<string, number>();
   const options = new Map<string, string>();
   const hits: number[] = [];
   const pans: [number, number][] = [];
+  const aims: [number, number, number][] = [];
   const controls: DirectorControls = {
     setSlider: (id, v) => sliders.set(id, v),
     setOption: (group, id) => options.set(group, id),
     fire: (s) => hits.push(s),
     pan: (x, y) => pans.push([x, y]),
+    aim: (yaw, pitch, seconds) => aims.push([yaw, pitch, seconds]),
   };
   const director = new Director(controls);
   director.start({ state: 0, depth: 0.5, spin: 0, orbit: 3 / 8, mforce: 0.5 });
-  return { director, sliders, options, hits, pans };
+  return { director, sliders, options, hits, pans, aims };
 }
 
 /** Plays `seconds` of music with these features, 60 frames a second. Returns the scenes seen. */
@@ -242,5 +245,50 @@ describe('AI mode', () => {
     };
     expect(spread(states)).toBeGreaterThan(0.08);
     expect(spread(depths)).toBeGreaterThan(0.03);
+  });
+
+  it('turns the view at Spin speeds, with the odd sweep toward side on that comes back', () => {
+    const { director, aims } = setup();
+    play(director, groove, 3600, 0, 124);
+    expect(aims.length).toBeGreaterThan(40);
+    const bar = (4 * 60) / 124;
+    const sweeps = aims.filter(([yaw]) => Math.abs(yaw) > 1);
+    // Mostly gentle: within the gentle range.
+    const gentle = aims.filter(([yaw]) => Math.abs(yaw) <= 0.6);
+    expect(gentle.length / aims.length).toBeGreaterThan(0.75);
+    // Every move turns at one of the Spin speeds (a turn per 4, 8 or 16 bars), so it's seen to move.
+    let yaw0 = 0;
+    let pitch0 = 0;
+    for (const [yaw, pitch, seconds] of aims) {
+      const turn = Math.hypot(yaw - yaw0, pitch - pitch0);
+      if (seconds > 0.4 + 1e-9) {
+        const barsPerTurn = (seconds / bar) * ((2 * Math.PI) / turn);
+        expect([4, 8, 16].some((b) => Math.abs(barsPerTurn - b) < 1e-6)).toBe(true);
+      }
+      [yaw0, pitch0] = [yaw, pitch];
+    }
+    // Sweeps are rare, and the next move always brings the view back in.
+    expect(sweeps.length).toBeGreaterThan(0);
+    expect(sweeps.length / aims.length).toBeLessThan(0.2);
+    aims.forEach(([yaw], k) => {
+      if (Math.abs(yaw) > 1 && k + 1 < aims.length) expect(Math.abs(aims[k + 1][0])).toBeLessThan(0.6);
+    });
+  });
+
+  it('leaves the view alone once the performer turns it', () => {
+    const { director, aims } = setup();
+    play(director, groove, 120, 0, 124);
+    const before = aims.length;
+    director.touch('view');
+    play(director, groove, 25, 120, 124);
+    expect(aims.length).toBe(before);
+  });
+
+  it('holds everything still without music, and carries on when it comes in', () => {
+    const { director, sliders, options, aims, pans } = setup();
+    for (let s = 0; s < 120 * 60; s++) director.update(ambient, 1 / 60, s / 60, 0, false);
+    expect(sliders.size + options.size + aims.length + pans.length).toBe(0);
+    play(director, ambient, 5, 120);
+    expect(sliders.size).toBeGreaterThan(0);
   });
 });

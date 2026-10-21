@@ -90,6 +90,8 @@ export class Tracers {
     ctx: CanvasRenderingContext2D,
     opts: {
       night: boolean;
+      /** Add the strokes up like light (default: when `night`); off to lay dark strokes over a light ground. */
+      additive?: boolean;
       openness: number;
       lineWidth: number;
       /** Overall strength; ritual smoke is fainter than night's light trails. */
@@ -141,7 +143,7 @@ export class Tracers {
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     ctx.lineWidth = o.lineWidth;
-    ctx.globalCompositeOperation = o.night ? 'lighter' : 'source-over';
+    ctx.globalCompositeOperation = (o.additive ?? o.night) ? 'lighter' : 'source-over';
     for (let g = 0; g < this.groups.length; g++) {
       const list = this.groups[g];
       if (list.length === 0) continue;

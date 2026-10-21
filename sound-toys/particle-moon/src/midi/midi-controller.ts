@@ -97,6 +97,15 @@ export class MidiController {
       : 'No MIDI inputs found. Plug in the controller.';
     if (!this.learning) this.status.textContent = this.connectedText;
     this.mapBtn.disabled = names.length === 0;
+    this.showConnected(names.length > 0);
+  }
+
+  /** The header's MIDI light: green with a controller connected, red without. */
+  private showConnected(on: boolean): void {
+    const dot = document.getElementById('midi-dot');
+    if (!dot) return;
+    dot.toggleAttribute('data-on', on);
+    dot.title = on ? 'MIDI connected' : 'MIDI not connected';
   }
 
   private onMessage(e: MIDIMessageEvent, portName: string): void {

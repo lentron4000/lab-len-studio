@@ -44,6 +44,8 @@ export class Transport {
   private offsetSet = false;
   private kicks: [heardAt: number, strength: number][] = [];
   private lastPoll = nowSeconds();
+  /** How far ahead `upcoming` has already looked (wall clock). */
+  private lastAhead = nowSeconds();
   private clockBeats = 0;
   /** Wall-clock time of the last analysis frame: without any (paused, stopped) there's no music. */
   private lastFrameAt = -Infinity;
@@ -61,7 +63,7 @@ export class Transport {
     this.fps = fps;
     this.tracker = new TempoTracker(fps);
     this.kicks = [];
-    this.lastPoll = nowSeconds();
+    this.lastPoll = this.lastAhead = nowSeconds();
     this.offset = 0;
     this.offsetSet = false;
     this.lastFrameAt = -Infinity;
@@ -141,6 +143,17 @@ export class Transport {
     return { kicks, beats };
   }
 
+  /**
+   * Beats the beat clock expects within `lead` seconds of `now`, each counted once: for a wind-up that
+   * starts before the beat it leads into. (Not under MIDI clock, whose beats come only as they happen.)
+   */
+  upcoming(now: number, lead: number): number {
+    const from = Math.max(this.lastAhead, now);
+    this.lastAhead = now + lead;
+    if (this.clock.isActive() || (!this.tracker.locked && this.quiet(now))) return 0;
+    return this.tracker.beats(from - this.offset, now + lead - this.offset).length;
+  }
+
   readout(mode: SourceMode): TempoReadout {
     const t = this.tracker;
     const overridden = mode !== 'demo' && (t.locked || t.octave !== 1 || this.clock.multiplier !== 1);
@@ -170,7 +183,7 @@ export class Transport {
         };
       }
       case 'holding':
-        return { bpm, label: 'Holding (no beat heard)', overridden };
+        return { bpm, label: 'Holding', overridden };
       case 'silent':
         return { bpm: 0, label: 'Silence', overridden };
       default:

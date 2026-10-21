@@ -82,6 +82,24 @@ const SHIFT_MIN_BARS = 4;
 const PAN_BARS = 32;
 const PAN_X = 0.04;
 const PAN_Y = 0.03;
+/**
+ * The view's angle: a new one every ANGLE_BARS with a beat (ANGLE_SECONDS without), up to ANGLE_YAW /
+ * ANGLE_PITCH (radians) off straight on, and back to straight on ANGLE_STRAIGHT of the time. ANGLE_SWEEP
+ * of the time instead a bigger turn toward side on (ANGLE_SIDE, where the disc's face can be seen
+ * moving), held SWEEP_HOLD_BARS, and the next move brings it back. Each move turns at one of the Spin
+ * speeds (a turn per this many bars; see SPIN_BARS), so it reads as a move: ANGLE_RATES for the
+ * gentle ones, SWEEP_RATES for sweeps and the return from them.
+ */
+const ANGLE_BARS: readonly [number, number] = [16, 32];
+const ANGLE_SECONDS: readonly [number, number] = [20, 45];
+const ANGLE_YAW = 0.6;
+const ANGLE_PITCH = 0.45;
+const ANGLE_STRAIGHT = 0.25;
+const ANGLE_SWEEP = 0.12;
+const ANGLE_SIDE = 1.3;
+const ANGLE_RATES: readonly number[] = [16, 8];
+const SWEEP_RATES: readonly number[] = [8, 4];
+const SWEEP_HOLD_BARS: readonly [number, number] = [4, 8];
 const ENERGY_SHIFT = 0.25;
 const AMBIENT_MIN = 6;
 const AMBIENT_EVERY = 30;
@@ -131,6 +149,8 @@ export interface DirectorControls {
   fire(strength: number): void;
   /** Moves the shape off centre by these fractions of the screen's width and height. */
   pan(x: number, y: number): void;
+  /** Glides the view to this angle (yaw, pitch in radians off straight on) over `seconds`. */
+  aim(yaw: number, pitch: number, seconds: number): void;
 }
 
 /**
@@ -158,6 +178,12 @@ export class Director {
   private spinStep = 2;
   private orbitStep = 3;
   private pan = { fromX: 0, fromY: 0, toX: 0, toY: 0, start: -Infinity, length: 1 };
+  /** When the view's next angle is due, and whether it's on a sweep (the next move brings it back). */
+  private nextAngleAt = 0;
+  private sweeping = false;
+  /** Where the director last aimed the view (yaw, pitch), to time the next move by how far it goes. */
+  private aimYaw = 0;
+  private aimPitch = 0;
   private beats = 0;
   private lookEnergy = 0;
   private lookAt = -Infinity;
@@ -182,7 +208,9 @@ export class Director {
   /** `mode` is the look's physics: gas or water, or attract / repel (a pole over either). */
   private readonly chosen: Record<OptionGroup, string> = { mode: '', shape: '', moon: '', pole: '' };
   private readonly touched = new Map<string, number>();
+  /** The director's clock: real time less the silences, so nothing it's timing runs on while it waits. */
   private now = 0;
+  private silentFor = 0;
   private bpm = 0;
 
   constructor(private readonly controls: DirectorControls) {}
@@ -195,8 +223,10 @@ export class Director {
     this.lookBeats = 0;
     this.nextMoveBeat = 0;
     this.nextMoveAt = 0;
-    // Pan from wherever the shape sits now.
+    // Pan from wherever the shape sits now; the first angle a little after starting.
     this.pan.start = -Infinity;
+    this.nextAngleAt = 0;
+    this.sweeping = false;
     this.enabled = true;
   }
 
@@ -205,11 +235,22 @@ export class Director {
     this.touched.set(control, this.now);
   }
 
-  /** @param bpm the transport's tempo (0 when there's none) */
-  update(f: MusicFeatures, dt: number, now: number, bpm = 0): void {
+  /** Whether the director has `control` (the performer hasn't touched it lately). */
+  holds(control: string): boolean {
+    return this.free(control);
+  }
+
+  /**
+   * @param bpm the transport's tempo (0 when there's none)
+   * @param playing whether there's music: without it the director holds everything where it is (no moves,
+   *   looks, pans or turns) and its clock stops, so it picks up where it left off when the music comes in.
+   */
+  update(f: MusicFeatures, dt: number, now: number, bpm = 0, playing = true): void {
     this.bpm = bpm;
-    this.now = now;
-    if (!this.enabled) return;
+    if (!playing && this.enabled) this.silentFor += dt;
+    this.now = now - this.silentFor;
+    if (!this.enabled || !playing) return;
+    now = this.now;
     this.readScene(f, dt, now);
     const look = this.look(f);
     this.current = look;
@@ -217,6 +258,7 @@ export class Director {
     const k = 1 - Math.exp(-dt / look.glide);
     for (const id of Object.keys(this.value) as SliderId[]) this.value[id] += (look[id] - this.value[id]) * k;
     this.panStep();
+    this.angleStep(f);
     this.sinceApply += dt;
     if (this.sinceApply >= 1 / APPLY_RATE) {
       this.sinceApply = 0;
@@ -310,6 +352,46 @@ export class Director {
     }
     const e = t * t * (3 - 2 * t);
     this.controls.pan(p.fromX + (p.toX - p.fromX) * e, p.fromY + (p.toY - p.fromY) * e);
+  }
+
+  /**
+   * The view's angle: now and then a new one, glided to gradually; the odd sweep toward side on, which
+   * the next move brings back. (Not while the performer has the view.)
+   */
+  private angleStep(f: MusicFeatures): void {
+    if (this.now < this.nextAngleAt) return;
+    const beat = f.kickRate >= BEAT_RATE;
+    const bar = (4 * 60) / (this.bpm || 120);
+    const pick = (r: readonly [number, number]): number => r[0] + Math.random() * (r[1] - r[0]);
+    const every = beat ? Math.round(pick(ANGLE_BARS) / 4) * 4 * bar : pick(ANGLE_SECONDS);
+    const side = Math.random() < 0.5 ? -1 : 1;
+    let yaw: number;
+    let pitch: number;
+    let rates = ANGLE_RATES;
+    if (!this.sweeping && Math.random() < ANGLE_SWEEP) {
+      yaw = side * ANGLE_SIDE * (0.85 + 0.15 * Math.random());
+      pitch = (Math.random() * 2 - 1) * ANGLE_PITCH * 0.4;
+      rates = SWEEP_RATES;
+      this.sweeping = true;
+    } else if (this.sweeping || Math.random() < ANGLE_STRAIGHT) {
+      if (this.sweeping) rates = SWEEP_RATES;
+      yaw = this.sweeping ? side * ANGLE_YAW * 0.3 * Math.random() : 0;
+      pitch = 0;
+      this.sweeping = false;
+    } else {
+      yaw = side * ANGLE_YAW * (0.3 + 0.7 * Math.random());
+      pitch = (Math.random() * 2 - 1) * ANGLE_PITCH;
+    }
+    // At a Spin speed: as long as a turn of this size takes at one turn per `rate` bars.
+    const rate = rates[Math.floor(Math.random() * rates.length)];
+    const turn = Math.hypot(yaw - this.aimYaw, pitch - this.aimPitch);
+    const seconds = Math.max(0.4, (turn / (2 * Math.PI)) * rate * bar);
+    this.nextAngleAt =
+      this.now + (this.sweeping ? seconds + pick(SWEEP_HOLD_BARS) * bar : Math.max(every, seconds + bar));
+    if (!this.free('view')) return;
+    this.controls.aim(yaw, pitch, seconds);
+    this.aimYaw = yaw;
+    this.aimPitch = pitch;
   }
 
   /**

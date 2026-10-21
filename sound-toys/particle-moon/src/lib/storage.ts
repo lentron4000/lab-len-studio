@@ -8,7 +8,6 @@
 export const StorageKey = {
   AudioInput: 'sound-toy:audio-input',
   MidiMap: 'sound-toy:midi-map',
-  Night: 'sound-toy:night',
 } as const;
 export type StorageKey = (typeof StorageKey)[keyof typeof StorageKey];
 
@@ -16,7 +15,6 @@ export type StorageKey = (typeof StorageKey)[keyof typeof StorageKey];
 const LEGACY: Record<StorageKey, string> = {
   [StorageKey.AudioInput]: 'pc-audio-in',
   [StorageKey.MidiMap]: 'pc-midi-map',
-  [StorageKey.Night]: 'pc-night',
 };
 
 export function load(key: StorageKey): string | null {

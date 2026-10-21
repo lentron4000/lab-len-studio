@@ -8,13 +8,13 @@ import { MusicListener } from './auto/listener';
 import { labMode } from './lab-mode';
 import { byId, isShortcut } from './lib/dom';
 import { nowSeconds } from './lib/math';
-import { load, save, StorageKey } from './lib/storage';
 import { MidiController } from './midi/midi-controller';
 import { type Look, Renderer } from './render/renderer';
 import { Bloom } from './sim/bloom';
-import { Simulation, type Viewport } from './sim/simulation';
+import { DROP_SECONDS, Simulation, type Viewport } from './sim/simulation';
 import { bindControls, createAudioListener, type ControlHost } from './ui/controls';
 import { computeViewport, placePanelTab } from './ui/layout';
+import { attachOrbit } from './ui/orbit';
 import { ShowMode } from './ui/show';
 import { bindSummoning } from './ui/summon';
 
@@ -27,6 +27,10 @@ const DEPTH_LOUD = 1.5;
 const LOUD_AT = 0.8;
 /** The opening waits at most this long for the web fonts (offline they never come). */
 const FONT_WAIT_MS = 3000;
+/** Energy (0–1, see MusicFeatures) below which there's no music for AI mode to play to. */
+const MUSIC_FLOOR = 0.04;
+/** A kick this long (s) past a predicted beat's wind-up still counts as landing on it (detection jitter). */
+const DROP_GRACE = 0.08;
 
 const wait = (ms: number): Promise<void> =>
   new Promise((resolve) => {
@@ -38,13 +42,16 @@ const LOOK_RADIO: Record<Look, string> = {
   dark: 'night-dark',
   night: 'night-on',
   ritual: 'night-ritual',
+  wire: 'night-wire',
+  refract: 'night-refract',
 };
 
-/** The look last chosen in len mode (the only mode that can switch); '1' is how night used to be saved. */
-function savedLook(): Look {
-  const v = load(StorageKey.Night);
-  if (v === '1' || v === 'night') return 'night';
-  return v === 'ritual' || v === 'dark' ? v : 'day';
+/** The system's light or dark setting. */
+const systemDark = matchMedia('(prefers-color-scheme: dark)');
+
+/** The look to open on where the mode doesn't set one: Day or Night, as the system is set. */
+function systemLook(): Look {
+  return systemDark.matches ? 'dark' : 'day';
 }
 
 /** Particle count scales with screen area: dense enough to read as solid, light enough for phones. */
@@ -64,6 +71,9 @@ class App implements ControlHost {
   /** From `?m=`: which look is locked in and whether formations are on. */
   readonly mode = labMode(location.search, import.meta.env.VITE_LAB_MODE);
   pulseOn: 'kick' | 'beat' = 'kick';
+  /** When the last wind-up started (s), and kicks waiting out a wind-up of their own before they hit. */
+  private dropAt = -Infinity;
+  private held: { at: number; strength: number }[] = [];
 
   private readonly show = new ShowMode();
   private readonly canvas = byId('c', HTMLCanvasElement);
@@ -134,6 +144,9 @@ class App implements ControlHost {
       this.panTarget.x = x;
       this.panTarget.y = y;
     },
+    aim: (yaw, pitch, seconds) => {
+      this.sim.camera.glideTo(yaw, pitch, seconds);
+    },
   });
   /** AI mode's slow pan (fractions of the screen), eased; back to centre when it's off. */
   private readonly panTarget = { x: 0, y: 0 };
@@ -147,12 +160,23 @@ class App implements ControlHost {
     const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
     this.renderer = new Renderer(this.canvas, this.sim, reducedMotion);
     this.sim.pointer.attach(this.canvas);
+    // Turning the view by hand (or resetting it) takes it from AI mode for a while.
+    attachOrbit(this.canvas, this.sim, () => {
+      this.director.touch('view');
+    });
+    byId('view-reset').addEventListener('click', () => {
+      this.director.touch('view');
+      this.sim.camera.reset();
+    });
     byId('nn').textContent = this.sim.count.toLocaleString();
 
     const controls = bindControls(this);
     this.refreshTempoLabels = controls.refreshTempoLabels;
     // Locked modes hide the look switch; formations (and their controls) only where the mode has them.
     byId('look-row').hidden = this.mode.look !== null;
+    // Only the mode's own looks are offered (the plain toy: Day and Night; the rest by ?m=).
+    for (const [look, id] of Object.entries(LOOK_RADIO) as [Look, string][])
+      byId(id).closest('label')!.hidden = !this.mode.looks.includes(look);
     byId('summon-row').hidden = byId('intensity-row').hidden = !this.mode.formations;
     const { onNote, onPressure } = this.mode.formations
       ? bindSummoning(this.sim)
@@ -161,14 +185,19 @@ class App implements ControlHost {
       this.panel,
       this.transport.clock,
       (velocity) => {
-        this.fire(velocity);
+        this.fire(velocity, true);
       },
       onNote,
       onPressure,
     );
-    this.setLook(this.mode.look ?? savedLook());
-    // Opens with the controls showing. H (or Hide) clears everything for projection.
-    controls.setPanel(true, false);
+    this.setLook(this.mode.look ?? systemLook());
+    // While on Day or Night, follow the system as it changes (sunset, a manual switch).
+    systemDark.addEventListener('change', () => {
+      if (!this.mode.look && (this.renderer.look === 'day' || this.renderer.look === 'dark'))
+        this.setLook(systemLook());
+    });
+    // Opens with the controls hidden (bare, for projection); moving the pointer shows the Controls button, H toggles.
+    controls.setPanel(false, false);
 
     window.addEventListener('resize', () => {
       this.resize();
@@ -197,6 +226,10 @@ class App implements ControlHost {
     });
     window.addEventListener('keydown', (e) => {
       if (isShortcut(e, 'a')) this.toggleAuto();
+      else if (isShortcut(e, 'r')) {
+        this.director.touch('view');
+        this.sim.camera.reset();
+      }
     });
     // Anything the performer (or a MIDI controller) moves while AI mode plays is theirs for a while.
     const handBack = (e: Event): void => {
@@ -240,8 +273,30 @@ class App implements ControlHost {
     }, 1200);
   }
 
-  fire(strength: number): void {
+  /**
+   * A kick: the energy drops for a moment, then the hit lands. On a beat the clock saw coming, the drop
+   * is already under way and it hits at once; out of the blue (no tempo yet, AI mode's drop) it winds up
+   * first, DROP_SECONDS late. A `played` hit (a pad, the Hit button) lands at once, no wind-up: a
+   * performer's hit must never lag.
+   */
+  fire(strength: number, played = false): void {
+    const now = nowSeconds();
+    if (played || now - this.dropAt < DROP_SECONDS + DROP_GRACE) {
+      this.hit(strength);
+      return;
+    }
+    this.windUp(now);
+    this.held.push({ at: now + DROP_SECONDS, strength });
+  }
+
+  private windUp(now: number): void {
+    this.dropAt = now;
+    this.sim.drop();
+  }
+
+  private hit(strength: number): void {
     this.sim.fire(strength);
+    if (this.renderer.look === 'refract') this.renderer.refract.kick(strength, this.renderer.loud);
     if (this.renderer.look === 'night') this.renderer.fireflies.wave(strength, nowSeconds());
   }
 
@@ -253,12 +308,19 @@ class App implements ControlHost {
     // A locked mode ignores N, MIDI toggles and anything else asking for another look.
     if (this.mode.look && look !== this.mode.look) return;
     this.renderer.look = look;
+    // Wire lays the globe's particles out as a geodesic frame (a morph, or at once while opening).
+    this.sim.wireTarget = look === 'wire' ? 1 : 0;
+    if (this.waiting) this.sim.snapWire();
     // Party (night) and ritual share the dusk page; ritual then recolours it. Night (dark) inverts day's.
-    document.documentElement.toggleAttribute('data-night', look === 'night' || look === 'ritual');
+    document.documentElement.toggleAttribute(
+      'data-night',
+      look === 'night' || look === 'ritual' || look === 'wire' || look === 'refract',
+    );
     document.documentElement.toggleAttribute('data-dark', look === 'dark');
     document.documentElement.toggleAttribute('data-ritual', look === 'ritual');
+    document.documentElement.toggleAttribute('data-wire', look === 'wire');
+    document.documentElement.toggleAttribute('data-refract', look === 'refract');
     byId(LOOK_RADIO[look], HTMLInputElement).checked = true;
-    if (!this.mode.look) save(StorageKey.Night, look);
   }
 
   setBare(on: boolean): void {
@@ -301,6 +363,7 @@ class App implements ControlHost {
     this.accumulator += dtMs;
 
     this.renderer.tick(dtMs / 1000, nowSeconds());
+    this.sim.camera.tick(dtMs / 1000);
     this.handleTransport();
     this.listen(dtMs / 1000);
     this.applyPan(dtMs / 1000);
@@ -349,6 +412,11 @@ class App implements ControlHost {
   /** Kicks and beats → pulses. The demo always pulses on its own kick, which is also its beat. */
   private handleTransport(): void {
     const now = nowSeconds();
+    // The wind-up leads each beat the clock sees coming; kicks that wound up on their own land after theirs.
+    if (this.transport.upcoming(now, DROP_SECONDS)) this.windUp(now);
+    const due = this.held.filter((h) => h.at <= now);
+    this.held = this.held.filter((h) => h.at > now);
+    for (const h of due) this.hit(h.strength);
     const { kicks, beats } = this.transport.poll(now);
     for (const k of kicks) this.listener.kick(k, now);
     if (this.pulseOn === 'kick') for (const k of kicks) this.fire(k);
@@ -376,17 +444,24 @@ class App implements ControlHost {
           : Math.min(1, 0.75 * f.shimmer + 0.25 * f.loud);
     this.sim.sound +=
       (target - this.sim.sound) * (1 - Math.exp(-dt / (target > this.sim.sound ? 0.03 : 0.25)));
+    // Refract tears with loudness (the demo's synthetic kick isn't analysed: a steady middling level).
+    this.renderer.loud = this.audio.mode === 'demo' ? 0.45 : this.audio.mode === 'off' ? 0 : f.loud;
     // Depth follows the music's loudness: from DEPTH_QUIET of Depth in quiet passages to DEPTH_LOUD
     // in loud ones (your Depth sits at a middling level). The demo's steady kick keeps Depth as set.
     const amp = this.audio.mode === 'file' || this.audio.mode === 'live' ? f.energy : null;
     const gain = amp === null ? 1 : DEPTH_QUIET + (DEPTH_LOUD - DEPTH_QUIET) * Math.min(1, amp / LOUD_AT);
     this.sim.depthGain += (gain - this.sim.depthGain) * (1 - Math.exp(-dt / 0.3));
-    this.director.update(f, dt, now, this.transport.readout(this.audio.mode).bpm);
+    // AI mode waits for music (the demo's kick counts, though it isn't analysed).
+    const playing = this.audio.mode === 'demo' || f.energy > MUSIC_FLOOR;
+    this.director.update(f, dt, now, this.transport.readout(this.audio.mode).bpm, playing);
   }
 
   private toggleAuto(): void {
-    if (this.director.enabled) this.director.enabled = false;
-    else {
+    if (this.director.enabled) {
+      this.director.enabled = false;
+      // The view AI mode turned goes back to straight on (one the performer turned stays put).
+      if (this.director.holds('view')) this.sim.camera.reset();
+    } else {
       const read = (id: string): number => {
         const el = byId(id, HTMLInputElement);
         return (Number(el.value) - Number(el.min)) / (Number(el.max) - Number(el.min));

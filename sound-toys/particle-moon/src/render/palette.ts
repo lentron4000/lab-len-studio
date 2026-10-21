@@ -3,6 +3,8 @@
 
 export type Rgb = readonly [number, number, number];
 
+export const css = ([r, g, b]: Rgb): string => `rgb(${r},${g},${b})`;
+
 /** Day: depth bands back to front, so the far side of the globe reads lighter. */
 export const DAY_INK = '#111214';
 export const DAY_PAPER = '#ffffff';
@@ -48,7 +50,30 @@ export const EMBER: readonly Rgb[] = [
   [255, 110, 24],
   [200, 22, 14],
 ];
-export const RITUAL_BLACK = '#000000';
+/** Ritual, inverted: the resting blood red (HEAT[1]) is the ground, and everything on it is black. */
+export const RITUAL_RED = css(HEAT[1]);
+export const RITUAL_INK: Rgb = [0, 0, 0];
+/**
+ * Wire (synthwave): the dark it glows on, and the wire's ramp, darkest to brightest: violet at rest,
+ * then hot pink, cyan and white as the energy climbs.
+ */
+export const WIRE_BG = '#0b0614';
+export const WIRE_RAMP: readonly Rgb[] = [
+  [157, 77, 255],
+  [255, 43, 214],
+  [34, 228, 255],
+  [255, 255, 255],
+];
+/** The ramp in `steps` even colours, darkest first. */
+export function wireShades(steps: number): string[] {
+  return Array.from({ length: steps }, (_, k) => {
+    const t = (k / (steps - 1)) * (WIRE_RAMP.length - 1);
+    const lo = Math.min(WIRE_RAMP.length - 2, Math.floor(t));
+    const f = t - lo;
+    const [a, b] = [WIRE_RAMP[lo], WIRE_RAMP[lo + 1]];
+    return css([0, 1, 2].map((c) => Math.round(a[c] + (b[c] - a[c]) * f)) as unknown as Rgb);
+  });
+}
 /** Share of particles drawn in the cyan accent. */
 export const ACCENT_SHARE = 0.1;
 /** Night depth bands: alpha multipliers back to front. */
@@ -60,8 +85,6 @@ export const DUSK: readonly [stop: number, color: string][] = [
   [0.78, '#3a1650'],
   [1, '#5e1f55'],
 ];
-
-export const css = ([r, g, b]: Rgb): string => `rgb(${r},${g},${b})`;
 
 /**
  * A glow sprite per colour: near-white core, saturated halo, soft falloff.
@@ -129,8 +152,24 @@ export function createHeatSprites(size = 64): HTMLCanvasElement[] {
 }
 
 /**
- * Colour index per particle: soft regions laid out over the unit sphere (so a spinning globe carries
- * bands of colour), some scatter at region edges, and a sprinkling of the accent.
+ * Party's colours as drawn: NEON's pinks through blues (all but the accent) in NEON_SHADES even steps,
+ * so neighbours can be all but the same colour (each of NEON's own falls on one), then the accent last.
+ */
+export const NEON_SHADES = 21;
+export const NEON_RAMP: readonly Rgb[] = [
+  ...Array.from({ length: NEON_SHADES }, (_, k): Rgb => {
+    const t = (k / (NEON_SHADES - 1)) * (NEON.length - 2);
+    const lo = Math.min(NEON.length - 3, Math.floor(t));
+    const f = t - lo;
+    const [a, b] = [NEON[lo], NEON[lo + 1]];
+    return [0, 1, 2].map((c) => Math.round(a[c] + (b[c] - a[c]) * f)) as unknown as Rgb;
+  }),
+  NEON[NEON.length - 1],
+];
+
+/**
+ * Colour index (into NEON_RAMP) per particle on the globe: soft regions laid out over the unit sphere
+ * (so a spinning globe carries bands of colour), some scatter at region edges, and a sprinkling of the accent.
  */
 export function assignColours(sx: Float32Array, sy: Float32Array, sz: Float32Array): Uint8Array {
   const regions = NEON.length - 1;
@@ -140,7 +179,22 @@ export function assignColours(sx: Float32Array, sy: Float32Array, sz: Float32Arr
       ((Math.sin(3.1 * sx[i] + 0.4) + Math.sin(2.3 * sy[i] + 1.3) + Math.sin(2.7 * sz[i] + 2.1)) / 3) * 0.5 +
       0.5;
     const k = Math.max(0, Math.min(regions - 1, Math.floor(v * regions + (Math.random() - 0.5) * 1.6)));
-    out[i] = Math.random() < ACCENT_SHARE ? regions : k;
+    out[i] = Math.random() < ACCENT_SHARE ? NEON_SHADES : Math.round((k * (NEON_SHADES - 1)) / (regions - 1));
+  }
+  return out;
+}
+
+/**
+ * The same on the disc: one smooth, gently warped sweep from pink through violet to blue laid over its
+ * face, a shade or so of scatter, and no accent, so the packed dots melt into one another.
+ */
+export function assignDiscColours(dx: Float32Array, dy: Float32Array): Uint8Array {
+  const out = new Uint8Array(dx.length);
+  for (let i = 0; i < dx.length; i++) {
+    const [x, y] = [dx[i], dy[i]];
+    const v = 0.5 + 0.5 * Math.sin(1.6 * x + 1.1 * y + 0.55 * Math.sin(2.3 * y - 1.4 * x + 0.6));
+    const k = Math.round(v * (NEON_SHADES - 1) + (Math.random() - 0.5) * 1.6);
+    out[i] = Math.max(0, Math.min(NEON_SHADES - 1, k));
   }
   return out;
 }

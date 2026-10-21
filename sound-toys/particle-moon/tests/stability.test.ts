@@ -88,3 +88,36 @@ it('loose gas keeps its shape while spinning: no clump on the globe, no fling on
     expect(spread, label).toBeLessThan(1.6);
   }
 });
+
+it('a Tight disc comes back from a spinning globe as a solid circle, no gaps', () => {
+  const sim = new Simulation(1500);
+  sim.stateTarget = sim.state = 0;
+  sim.shapeTarget = 1;
+  sim.snapShape();
+  sim.spinBars = 4;
+  sim.bpm = 120;
+  sim.setViewport({ width: 900, height: 900, radius: 300, cx: 450, cy: 450 }, true);
+  for (let s = 0; s < 600; s++) sim.step();
+  sim.shapeTarget = 0;
+  for (let s = 0; s < 240; s++) sim.step();
+  // Cover a grid with the dots as drawn, inside the rim.
+  const dot = sim.dotRadius();
+  const re = sim.effectiveRadius();
+  const W = 900;
+  const grid = new Uint8Array(W * W);
+  for (let i = 0; i < sim.count; i++) {
+    for (let y = Math.floor(sim.y[i] - dot); y <= sim.y[i] + dot; y++)
+      for (let x = Math.floor(sim.x[i] - dot); x <= sim.x[i] + dot; x++)
+        if ((x - sim.x[i]) ** 2 + (y - sim.y[i]) ** 2 <= dot * dot && x >= 0 && y >= 0 && x < W && y < W)
+          grid[y * W + x] = 1;
+  }
+  let inside = 0;
+  let covered = 0;
+  for (let y = 0; y < W; y++)
+    for (let x = 0; x < W; x++)
+      if (Math.hypot(x - 450, y - 450) < re * 0.97) {
+        inside++;
+        covered += grid[y * W + x];
+      }
+  expect(covered / inside).toBeGreaterThan(0.999);
+});

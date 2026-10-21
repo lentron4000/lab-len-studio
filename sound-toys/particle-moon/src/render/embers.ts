@@ -1,13 +1,13 @@
 // Sound Toy — Copyright (c) 2026 Lenny Ford, Len Studio (https://len.studio)
 // SPDX-License-Identifier: MIT. If you use or adapt this, credit "Sound Toy by Lenny Ford (len.studio)".
-import { createGlowSprites, EMBER } from './palette';
+import { createCrispSprites, RITUAL_INK } from './palette';
 
 /** Most embers alive at once. */
 const POOL = 360;
 
 /**
  * Ritual sparks. Flaring particles shed embers that rise like heat off a fire, wander on a slow
- * turbulence, cool from sulphur gold through orange to red, and go out. Screen-space only: they
+ * turbulence, and go out: black ash on the red ground. Screen-space only: they
  * don't touch the simulation. Speeds are in shape radii, so they look the same at any window size.
  */
 export class Embers {
@@ -19,7 +19,7 @@ export class Embers {
   private readonly life = new Float32Array(POOL);
   private readonly size = new Float32Array(POOL);
   private readonly seed = new Float32Array(POOL);
-  private readonly sprites = createGlowSprites(EMBER, 32);
+  private readonly sprites = createCrispSprites([RITUAL_INK], 16);
   private next = 0;
   private time = 0;
 
@@ -53,8 +53,9 @@ export class Embers {
     }
   }
 
-  /** Additive; call inside a 'lighter' pass. `scale` is the particle dot size. */
+  /** Laid over (source-over), not added: black on red. `scale` is the particle dot size. */
   draw(ctx: CanvasRenderingContext2D, scale: number): void {
+    ctx.globalCompositeOperation = 'source-over';
     const last = this.sprites.length - 1;
     for (let i = 0; i < POOL; i++) {
       if (this.age[i] >= this.life[i]) continue;

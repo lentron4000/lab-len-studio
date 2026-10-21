@@ -5,7 +5,8 @@ import type { Look } from './render/renderer';
 /**
  * Modes, chosen by the `m` URL parameter (`?m=ritual`). Each locks the toy to one look and decides
  * what it offers; `len` is the master mode with everything unlocked, for demos. No parameter, or
- * one this build doesn't know, gives the plain toy (it opens on Day and can switch looks).
+ * one this build doesn't know, gives the plain toy (it opens on Day or Night, as the system is set, and
+ * switches between just those two). `party` and `night` are the same mode (Party's look is 'night').
  */
 export interface LabMode {
   name: string;
@@ -13,13 +14,20 @@ export interface LabMode {
   look: Look | null;
   /** Keys summon formations; the Summon and Intensity controls are shown. */
   formations: boolean;
+  /** The looks the viewer can switch between (N, or the Mode buttons), when the look isn't locked. */
+  looks: readonly Look[];
 }
 
+const ALL_LOOKS: readonly Look[] = ['day', 'dark', 'night', 'ritual', 'wire', 'refract'];
+
 export const MODES: Record<string, LabMode> = {
-  day: { name: 'day', look: null, formations: false },
-  night: { name: 'night', look: 'night', formations: false },
-  ritual: { name: 'ritual', look: 'ritual', formations: true },
-  len: { name: 'len', look: null, formations: true },
+  day: { name: 'day', look: null, formations: false, looks: ['day', 'dark'] },
+  night: { name: 'night', look: 'night', formations: false, looks: ['night'] },
+  party: { name: 'night', look: 'night', formations: false, looks: ['night'] },
+  ritual: { name: 'ritual', look: 'ritual', formations: true, looks: ['ritual'] },
+  wire: { name: 'wire', look: 'wire', formations: true, looks: ['wire'] },
+  refract: { name: 'refract', look: 'refract', formations: true, looks: ['refract'] },
+  len: { name: 'len', look: null, formations: true, looks: ALL_LOOKS },
 };
 
 /**

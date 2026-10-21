@@ -12,6 +12,11 @@ describe('lab mode', () => {
     expect(labMode('?m=RITUAL').name).toBe('ritual');
   });
 
+  it('offers just Day and Night in the plain toy; Party also answers to ?m=party', () => {
+    expect(labMode('').looks).toEqual(['day', 'dark']);
+    expect(labMode('?m=party')).toMatchObject({ look: 'night', formations: false });
+  });
+
   it('unlocks everything in len mode', () => {
     expect(labMode('?m=len')).toMatchObject({ look: null, formations: true });
   });

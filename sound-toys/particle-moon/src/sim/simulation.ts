@@ -6,8 +6,10 @@ import type { FormationId } from './formations';
 import { Moon } from './moon';
 import { PHYSICS_MODES, SOLID, type PhysicsMode } from './physics-modes';
 import { Pointer } from './pointer';
+import { Camera } from './camera';
 import { GLOBE_AXIS, rotation, type Mat3 } from './rotation';
 import { Summoning } from './summoning';
+import { discWireLayout, FreeStruts, wireLayout, type WireLayout } from './wire';
 
 /** Where the shape sits on screen, in CSS pixels. */
 export interface Viewport {
@@ -196,6 +198,30 @@ const RIPPLE_LIFT = 0.17;
 /** Ring width (shape radii), and how much motion it damps as it passes (0–1, per step at its centre). */
 const RIPPLE_WIDTH = 0.35;
 const RIPPLE_SETTLE = 0.25;
+/**
+ * The disc's face, seen side on, moves through depth like a speaker cone: a kick pushes it forward, it
+ * swings back past flat and rings out. Natural frequency (Hz), seconds for the ringing to die away, and
+ * how far a full kick throws the middle (shape radii). The rim is held a little, so it bows as it pumps.
+ */
+const CONE_HZ = 2.2;
+const CONE_RING = 0.32;
+const CONE_KICK = 0.22;
+const CONE_RIM = 0.55;
+/**
+ * The wind-up before a kick: for DROP_SECONDS the energy drops (the shape draws in toward its centre,
+ * this share of the way per step at full; the glow drains by DROP_DIM a step; a side-on cone recoils
+ * by DROP_CONE of a kick's throw), and then the hit lands on it.
+ */
+export const DROP_SECONDS = 0.07;
+const DROP_STEPS = Math.round(DROP_SECONDS * 60);
+const DROP_PULL = 0.007;
+const DROP_DIM = 0.25;
+const DROP_CONE = 0.35;
+/** Water instead: the drop dents the middle first (a crater this deep, shape radii, and this wide), then it rebounds. */
+const CRATER_DEPTH = 0.13;
+const CRATER_WIDTH = 0.45;
+/** A ring's rise and fall through depth, relative to its outward lift: a trough leads it, the crest follows. */
+const RIPPLE_HEAVE = 0.7;
 /** Pull behind the ring relative to the push in front, balanced so the water doesn't drift outward. */
 const RIPPLE_PULL = 1.3;
 /** A kick's attack: per-frame catch-up of the opening (about four frames to land), and frames its push is spread over. */
@@ -225,6 +251,11 @@ const NUDGE_DRAG = 0.75;
 const NUDGE_RETURN = 0.92;
 
 /** a × b for row-major 3×3 matrices. */
+/** An angle wrapped into −π…π. */
+function wrapAngle(a: number): number {
+  return a - 2 * Math.PI * Math.round(a / (2 * Math.PI));
+}
+
 function multiply(a: Mat3, b: Mat3): Mat3 {
   const m = new Array<number>(9);
   for (let r = 0; r < 3; r++) {
@@ -234,6 +265,10 @@ function multiply(a: Mat3, b: Mat3): Mat3 {
   return m as Mat3;
 }
 
+/** Disc: the State by which particles swirl fully at their own rates (none at full Tight). */
+const SWIRL_SHEAR_FULL = 0.25;
+/** Disc at Tight: seconds (easing time) for the swirl's lead and lag to heal, closing it into a solid circle. */
+const SWIRL_HEAL_SECONDS = 1.2;
 /** Seconds to morph between disc and globe. */
 const MORPH_SECONDS = 1.6;
 /**
@@ -312,7 +347,12 @@ export class Simulation {
    * and it drifts away, then condenses back over a couple of seconds.
    */
   readonly vapor: Float32Array;
-  /** Disc swirl: each particle's turn so far about the centre, and its own rate (×spin). */
+  /**
+   * Disc swirl: the disc's turn so far, each particle's lead or lag on it, and its own rate (×spin).
+   * Loose, the particles swirl at their own rates and slide past one another; Tight, the disc turns as
+   * one and any lead or lag heals away, so it closes back into a solid circle.
+   */
+  private discAngle = 0;
   private readonly discTurn: Float32Array;
   private readonly swirlRate: Float32Array;
   /**
@@ -323,6 +363,8 @@ export class Simulation {
   /** 0–1 per particle: how far an evaporating particle has drifted from home. It shrinks and fades by this. */
   readonly vaporFade: Float32Array;
   readonly pointer = new Pointer();
+  /** Where the shape is seen from (click and drag orbits it): a view only, but the pointer acts through it. */
+  readonly camera = new Camera();
   /** Formations summoned from the keys. */
   readonly summoning: Summoning;
   readonly moon = new Moon();
@@ -359,6 +401,69 @@ export class Simulation {
   sound = 0;
   /** 0 = disc, 1 = globe; the shape morphs toward it. */
   shapeTarget = 0;
+  /** 0 = plain globe, 1 = wire globe (particles along a geodesic frame); it morphs toward it. */
+  wireTarget = 0;
+  /** Current plain → wire blend (eased). */
+  wire = 0;
+  private wireMorph = 0;
+  /** How much the wire globe holds its shape against Loose (0–1): Loose breaks its struts free instead. */
+  private wireHold = 0;
+  /** The wire globe's struts, which Loose breaks off to float free. */
+  wireStruts: FreeStruts | null = null;
+  /** The wire globe's layout (homes, and each particle's next along its line), built when first wanted. */
+  wireLines: WireLayout | null = null;
+  /** The same for the wire disc: its flat frame, and its struts, which Loose breaks off to drift in its plane. */
+  discWireLines: WireLayout | null = null;
+  discWireStruts: FreeStruts | null = null;
+
+  /** Jumps straight to the chosen wire setting, with no morph. */
+  snapWire(): void {
+    if (this.wireTarget > 0) this.prepareWire();
+    this.wireMorph = this.wire = this.wireTarget;
+  }
+
+  /** Builds the wire globe's layout if it isn't yet. */
+  prepareWire(): WireLayout {
+    if (!this.wireLines) {
+      this.wireLines = wireLayout(this.sphereX, this.sphereY, this.sphereZ);
+      this.wireStruts = new FreeStruts(this.wireLines);
+      this.discWireLines = discWireLayout(this.discX, this.discY);
+      this.discWireStruts = new FreeStruts(this.discWireLines, true);
+    }
+    return this.wireLines;
+  }
+
+  /** The disc's home for particle i in the unit circle (before its swirl): plain, wire, or between. */
+  private discPoint(i: number, out: Float32Array): void {
+    const lines = this.discWireLines;
+    const w = lines && this.discWireStruts ? this.wire : 0;
+    out[0] = this.discX[i];
+    out[1] = this.discY[i];
+    if (!w) return;
+    this.discWireStruts!.place(i, lines!.x[i], lines!.y[i], 0, this.flat);
+    out[0] += (this.flat[0] - out[0]) * w;
+    out[1] += (this.flat[1] - out[1]) * w;
+  }
+  private readonly flat = new Float32Array(3);
+  private readonly discAt = new Float32Array(2);
+
+  /** The globe's home for particle i on the unit sphere: plain, wire, or between (by `wire`). */
+  private shellPoint(i: number, out: Float32Array): void {
+    const lines = this.wireLines;
+    const w = lines && this.wireStruts ? this.wire : 0;
+    if (!w) {
+      out[0] = this.sphereX[i];
+      out[1] = this.sphereY[i];
+      out[2] = this.sphereZ[i];
+      return;
+    }
+    // On the frame, or carried off with its strut once Loose has broken it free.
+    this.wireStruts!.place(i, lines!.x[i], lines!.y[i], lines!.z[i], out);
+    out[0] = this.sphereX[i] + (out[0] - this.sphereX[i]) * w;
+    out[1] = this.sphereY[i] + (out[1] - this.sphereY[i]) * w;
+    out[2] = this.sphereZ[i] + (out[2] - this.sphereZ[i]) * w;
+  }
+  private readonly shell = new Float32Array(3);
 
   /** A snare: nudges the spin forward a touch (strength 0–1+); it springs back on its own. */
   nudgeSpin(strength: number): void {
@@ -379,8 +484,9 @@ export class Simulation {
   private readonly vx: Float32Array;
   private readonly vy: Float32Array;
   private readonly vz: Float32Array;
-  private readonly discX: Float32Array;
-  private readonly discY: Float32Array;
+  /** Each particle's place on the disc (unit circle, before its swirl). */
+  readonly discX: Float32Array;
+  readonly discY: Float32Array;
   private readonly scatterX: Float32Array;
   private readonly scatterY: Float32Array;
   private readonly scatterZ: Float32Array;
@@ -394,6 +500,12 @@ export class Simulation {
   private blast = 0;
   /** Water: kicks travelling outward as rings (radius in px, impulse, glow). */
   private ripples: { r: number; amp: number; glow: number; lift: number }[] = [];
+  /** The disc's face through depth: the cone's (or crater's) throw at the middle (px) and its velocity. */
+  private cone = 0;
+  private coneV = 0;
+  /** The wind-up: steps of it left, and how deep into it the shape is (0–1), for the looks too. */
+  private dropLeft = 0;
+  dropLevel = 0;
   private pendingShock = 0;
   /** How open the kick has the shape right now; it rises over a few frames (attack) rather than at once. */
   private open = 0;
@@ -537,16 +649,36 @@ export class Simulation {
     return this.view.radius * (1 + 0.3 * this.state);
   }
 
+  /** Jumps straight to the chosen shape, with no morph (the page opening on it). */
+  snapShape(): void {
+    this.morph = this.shapeTarget;
+    const m = this.morph;
+    this.globe = m * m * m * (m * (m * 6 - 15) + 10);
+    if (this.wireTarget > 0) this.prepareWire();
+    this.wireMorph = this.wire = this.wireTarget;
+  }
+
   /** Updates the shape's place on screen. `reset` snaps every particle home (on resize). */
   setViewport(view: Viewport, reset: boolean): void {
     this.view = view;
     if (!reset) return;
     const re = this.effectiveRadius();
     const sc = view.radius * 0.2 * this.state;
+    // Homes as the step lays them out: the disc, blended toward the turned sphere by `globe`.
+    const M = rotation(GLOBE_AXIS, this.spinAngle + this.nudge);
+    const gw = this.globe;
     for (let i = 0; i < this.count; i++) {
-      this.x[i] = view.cx + this.discX[i] * re + this.scatterX[i] * sc;
-      this.y[i] = view.cy + this.discY[i] * re + this.scatterY[i] * sc;
-      this.z[i] = 0;
+      this.shellPoint(i, this.shell);
+      const sx = this.shell[0];
+      const sy = this.shell[1];
+      const sz = this.shell[2];
+      this.discPoint(i, this.discAt);
+      const [ddx, ddy] = this.discAt;
+      const hx = ddx + (M[0] * sx + M[1] * sy + M[2] * sz - ddx) * gw;
+      const hy = ddy + (M[3] * sx + M[4] * sy + M[5] * sz - ddy) * gw;
+      this.x[i] = view.cx + hx * re + this.scatterX[i] * sc;
+      this.y[i] = view.cy + hy * re + this.scatterY[i] * sc;
+      this.z[i] = (M[6] * sx + M[7] * sy + M[8] * sz) * gw * re;
       this.vx[i] = this.vy[i] = this.vz[i] = 0;
     }
     this.settle();
@@ -594,7 +726,18 @@ export class Simulation {
    * Strength 1 is a full kick. Up to BLAST_MAX goes further: the shape opens all the way, its springs
    * let go and the shockwave blows the particles into a hot mist that condenses back over a second.
    */
+  /** The wind-up before a kick (see DROP_SECONDS): call it that long before `fire`. */
+  drop(): void {
+    this.dropLeft = DROP_STEPS;
+    // A side-on cone draws back before it's pushed.
+    if (!this.mode.ripple)
+      this.coneV -= DROP_CONE * CONE_KICK * this.view.radius * ((2 * Math.PI * CONE_HZ) / 60);
+  }
+
   fire(strength: number): void {
+    // The hit ends any wind-up.
+    this.dropLeft = 0;
+    this.dropLevel = 0;
     this.pulse = Math.max(this.pulse, strength);
     // Now and then a kick surges the spin: a burst of speed that fades quickly (SURGE_TAU) back to the
     // set pace. Liquid, which swirls with the spin, takes it furthest.
@@ -620,12 +763,41 @@ export class Simulation {
 
   /** Advances one 1/60 s step. Returns mean kinetic energy (px²/step²) for the readout. */
   step(): number {
+    const { pointer, camera } = this;
+    if (camera.straight || !pointer.active) return this.advance();
+    // The camera is turned: the pointer acts where it points in the shape's own frame (taken on the
+    // plane through the centre, facing the camera), so stirring still lands under the cursor.
+    const { x, y, vx, vy } = pointer;
+    const { cx, cy } = this.view;
+    const m = camera.matrix;
+    const px = x - cx;
+    const py = y - cy;
+    pointer.x = cx + m[0] * px + m[3] * py;
+    pointer.y = cy + m[1] * px + m[4] * py;
+    pointer.vx = m[0] * vx + m[3] * vy;
+    pointer.vy = m[1] * vx + m[4] * vy;
+    const ke = this.advance();
+    Object.assign(pointer, { x, y, vx, vy });
+    return ke;
+  }
+
+  private advance(): number {
     this.steps++;
     this.kickLift *= KICK_LIFT_DECAY;
+    // (Eases in; ends at once, as the hit takes over.)
+    this.dropLevel = this.dropLeft > 0 ? this.dropLevel + (1 - this.dropLevel) * 0.5 : 0;
+    if (this.dropLeft > 0) this.dropLeft--;
+    const dropPull = DROP_PULL * this.dropLevel;
+    const dropKeep = 1 - DROP_DIM * this.dropLevel;
     this.settle();
     const { mode, moon, pointer, count: N, x, y, z, vx, vy, vz } = this;
     // The State slider, capped at the mode's loosest (water stops at 75%).
-    const slider = this.slider;
+    // The wire globe stays a wire: Loose (and a kick) breaks its struts off to float free (FreeStruts)
+    // rather than loosening its physics toward gas, which scribbles the lines. `wh` is how much the
+    // wire is in charge (last step's).
+    const wh = this.wireHold;
+    const sliderRaw = this.slider;
+    const slider = sliderRaw * (1 - wh);
     const { radius: R, cx, cy, width: W, height: H } = this.view;
 
     // Gas holds a kick's opening a little longer, so its churn has time to show.
@@ -644,8 +816,9 @@ export class Simulation {
       (this.pulse * this.kickDepth * (1 - mode.ripple) + blast) * lerp(1, GAS_KICK_REACH, mode.vapor),
     );
     this.open += (openTarget - this.open) * (openTarget > this.open ? KICK_ATTACK : 1);
-    this.state = slider + (1 - slider) * this.open;
-    const e = this.state;
+    this.state = sliderRaw + (1 - sliderRaw) * this.open;
+    // (Physics runs on the wire's tight state; `this.state` stays the real one for size and drawing.)
+    const e = this.state * (1 - wh);
     // In the blast range the shockwave grows much faster than the drive: that's what vaporizes.
     // `drive` and `shock` are this step's new hit (zero otherwise); its push is spread over KICK_STEPS.
     const drive = this.pendingShock * this.kickDepth;
@@ -674,6 +847,14 @@ export class Simulation {
       });
       if (this.ripples.length > MAX_RIPPLES) this.ripples.shift();
     }
+    // The cone (or the water's crater) is a damped spring: a hit is a shove, then it rings out on its own.
+    const coneW = (2 * Math.PI * CONE_HZ) / 60;
+    if (drive) {
+      const throw_ = mode.ripple ? -CRATER_DEPTH * Math.min(1.5, drive) : CONE_KICK * Math.min(1.5, drive);
+      this.coneV += throw_ * R * coneW;
+    }
+    this.coneV += -coneW * coneW * this.cone - (2 / (60 * CONE_RING)) * this.coneV;
+    this.cone += this.coneV;
     const instantShock = kickShock * (1 - mode.ripple) * lerp(1, GAS_SHOCK, mode.vapor);
 
     // A held formation takes over from the mode: a stiff spring to its target, calm damping, and no
@@ -740,6 +921,7 @@ export class Simulation {
     const evaporate =
       mode.vapor *
       (1 - fw) *
+      (1 - wh) *
       Math.min(VAPOR_MAX_SHARE * (1 - PUMP_VAPOR_CUT * deep), 0.16 * drive ** 1.6 * this.rest);
     const vapor = this.vapor;
     // Tight gas makes a shorter, quicker round trip than loose: less drift, an earlier turn, a harder pull.
@@ -758,6 +940,18 @@ export class Simulation {
     const m = this.morph;
     this.globe = m * m * m * (m * (m * 6 - 15) + 10);
     const gw = this.globe;
+    if (this.wireTarget > 0) this.prepareWire();
+    this.wireMorph += Math.max(-morphStep, Math.min(morphStep, this.wireTarget - this.wireMorph));
+    const wm = this.wireMorph;
+    this.wire = wm * wm * wm * (wm * (wm * 6 - 15) + 10);
+    this.wireHold = this.wire * (1 - fw);
+    // Loose (and a kick's opening) breaks struts off the wire globe and disc: by where the State slider
+    // sits (not the mode's capped looseness), so full Loose frees every strut in any mode.
+    if (this.wireStruts && this.wire > 0) {
+      const pos = Math.min(1, this.stateTarget + this.kickLift);
+      this.wireStruts.step(pos + (1 - pos) * this.open);
+      this.discWireStruts?.step(pos + (1 - pos) * this.open);
+    }
     // Spin. The globe turns rigidly on its tilted axis. The disc swirls: every particle orbits the centre
     // at its own rate (inner faster, each a little different), so they slide past one another.
     const targetSpin = angularStep(this.spinBars, this.bpm);
@@ -785,6 +979,10 @@ export class Simulation {
       dM = dM ? multiply(n, dM) : n;
     }
     const swirl = spinNow * (1 - fw);
+    this.discAngle = wrapAngle(this.discAngle + swirl);
+    // How far the particles swirl at their own rates: none at full Tight, fully by SWIRL_SHEAR_FULL.
+    const shear = Math.min(1, e / SWIRL_SHEAR_FULL);
+    const heal = (1 - shear) * (1 - Math.exp(-1 / 60 / SWIRL_HEAL_SECONDS));
     const swirlGrip = SWIRL_GRIP * (1 - gw);
     const camera = R * CAMERA_DISTANCE;
 
@@ -844,7 +1042,7 @@ export class Simulation {
     pointer.step();
     const pointerOn = pointer.active && mode.pointer;
     // Atmosphere (gas): how much is stirring it, and how chaotic a kick has left it.
-    const atmo = mode.atmosphere * (1 - fw);
+    const atmo = mode.atmosphere * (1 - fw) * (1 - wh);
     let atmoLevel = 0;
     let gatherDrift = 0;
     let swirlAmp = 0;
@@ -962,6 +1160,11 @@ export class Simulation {
     let sumVy = 0;
     let inShape = 0;
     const zPin = 0.08 * (1 - gw);
+    // Seen from the side, the flat disc's face flexes through depth with the music (the cone, the crater
+    // and the ripples' rise and fall), where it can be seen. Straight on it stays flat, as it always was.
+    const cm = this.camera.matrix;
+    const flexOn = Math.hypot(cm[2], cm[5]) * (1 - gw) * (1 - fw);
+    const crater = mode.ripple;
     // A flat shape (the disc, or a held formation) bleeds off depth motion. Without this, the moon's
     // nudges in z ring on a frictionless pin: particles bob toward the camera, swelling and glowing.
     // (Harder in silence, where no thermal jitter breaks up the bobbing.)
@@ -990,16 +1193,22 @@ export class Simulation {
       }
 
       // Home: the (swirling) disc point blended toward the rotating sphere point, loosened by the scatter.
-      if (swirl) this.discTurn[i] += swirl * this.swirlRate[i];
-      if (this.discTurn[i] > Math.PI) this.discTurn[i] -= 2 * Math.PI;
-      else if (this.discTurn[i] < -Math.PI) this.discTurn[i] += 2 * Math.PI;
-      const turnCos = Math.cos(this.discTurn[i] + this.nudge);
-      const turnSin = Math.sin(this.discTurn[i] + this.nudge);
-      const dhx = (this.discX[i] * turnCos - this.discY[i] * turnSin) * re;
-      const dhy = (this.discX[i] * turnSin + this.discY[i] * turnCos) * re;
-      const sx = this.sphereX[i];
-      const sy = this.sphereY[i];
-      const sz = this.sphereZ[i];
+      let lead = this.discTurn[i];
+      if (swirl) lead += swirl * (this.swirlRate[i] - 1) * shear;
+      lead = wrapAngle(lead);
+      this.discTurn[i] = lead - lead * heal;
+      const turn = this.discAngle + this.discTurn[i] + this.nudge;
+      const turnCos = Math.cos(turn);
+      const turnSin = Math.sin(turn);
+      this.discPoint(i, this.discAt);
+      const ddx = this.discAt[0];
+      const ddy = this.discAt[1];
+      const dhx = (ddx * turnCos - ddy * turnSin) * re;
+      const dhy = (ddx * turnSin + ddy * turnCos) * re;
+      this.shellPoint(i, this.shell);
+      const sx = this.shell[0];
+      const sy = this.shell[1];
+      const sz = this.shell[2];
       const shx = (M[0] * sx + M[1] * sy + M[2] * sz) * re;
       const shy = (M[3] * sx + M[4] * sy + M[5] * sz) * re;
       const shz = (M[6] * sx + M[7] * sy + M[8] * sz) * re;
@@ -1053,9 +1262,9 @@ export class Simulation {
       }
       if (breath) {
         // Gas: out along the home's own direction, more the further out it sits (a dense core stays).
-        const ux = this.discX[i] + (this.sphereX[i] - this.discX[i]) * gw;
-        const uy = this.discY[i] + (this.sphereY[i] - this.discY[i]) * gw;
-        const uz = this.sphereZ[i] * gw;
+        const ux = ddx + (sx - ddx) * gw;
+        const uy = ddy + (sy - ddy) * gw;
+        const uz = sz * gw;
         const ul = Math.hypot(ux, uy, uz) || 1;
         const push = breath * re * Math.min(1, ul) ** GAS_BREATH_CURVE;
         hx += (ux / ul) * push;
@@ -1064,9 +1273,9 @@ export class Simulation {
       }
       if (hollow) {
         // Out along the home's own direction from the centre (its disc / sphere point, so even the middle has one).
-        const ux = this.discX[i] + (this.sphereX[i] - this.discX[i]) * gw;
-        const uy = this.discY[i] + (this.sphereY[i] - this.discY[i]) * gw;
-        const uz = this.sphereZ[i] * gw;
+        const ux = ddx + (sx - ddx) * gw;
+        const uy = ddy + (sy - ddy) * gw;
+        const uz = sz * gw;
         const ul = Math.hypot(ux, uy, uz) || 1;
         const push = hollow * re * (1 - 0.5 * Math.min(1, ul));
         hx += (ux / ul) * push;
@@ -1103,7 +1312,24 @@ export class Simulation {
       const ki = v ? 0 : k;
       let ax = (hx - x[i]) * ki;
       let ay = (hy - y[i]) * ki;
-      let az = (hz - z[i]) * ki - z[i] * zPin;
+      let flex = 0;
+      if (flexOn > 1e-3) {
+        const pr = Math.hypot(x[i] - cx, y[i] - cy) / re;
+        const profile = lerp(
+          1 - CONE_RIM * Math.min(1, pr * pr),
+          Math.exp(-((pr / CRATER_WIDTH) ** 2)),
+          crater,
+        );
+        flex = this.cone * profile;
+        for (const ring of ripples) {
+          // Ahead of the ring (q > 0) the surface dips; behind it, it rises.
+          const q = (pr * re - ring.r) / rippleWidth;
+          if (q * q < 9) flex -= ring.lift * RIPPLE_HEAVE * q * Math.exp(0.5 - q * q) * Math.min(1, 0.3 + pr);
+        }
+        flex *= flexOn;
+        hz += flex;
+      }
+      let az = (hz - z[i]) * ki - (z[i] - flex) * zPin;
       ax += (Math.random() - 0.5) * thermal;
       ay += (Math.random() - 0.5) * thermal;
       az += (Math.random() - 0.5) * thermal * gw;
@@ -1135,6 +1361,12 @@ export class Simulation {
           vz[i] *= thick;
           if (this.excite[i] < ring.glow * rim * g) this.excite[i] = ring.glow * rim * g;
         }
+      }
+      if (dropPull > 1e-4 && !v) {
+        // The wind-up: drawn in toward the centre, more from further out.
+        vx[i] -= ox * dropPull;
+        vy[i] -= oy * dropPull;
+        vz[i] -= oz * dropPull;
       }
       if (instantShock) {
         const od = Math.hypot(ox, oy, oz) || 1;
@@ -1508,7 +1740,9 @@ export class Simulation {
         inShape++;
       }
       const stir = Math.min(1, (Math.hypot(nvx - tvx, nvy - tvy, nvz) - calm) * exciteGain);
-      excite[i] = stir > excite[i] ? excite[i] + (stir - excite[i]) * 0.5 : excite[i] * EXCITE_DECAY;
+      // The wind-up only drains the glow (its own pull doesn't light anything); the hit lights it again.
+      if (dropKeep < 1) excite[i] *= dropKeep;
+      else excite[i] = stir > excite[i] ? excite[i] + (stir - excite[i]) * 0.5 : excite[i] * EXCITE_DECAY;
       if (excite[i] < burn * 0.85) excite[i] = burn * 0.85;
     }
     if (inShape) {
