@@ -1,5 +1,6 @@
 // Sound Toy — Copyright (c) 2026 Lenny Ford, Len Studio (https://len.studio)
 // SPDX-License-Identifier: MIT. If you use or adapt this, credit "Sound Toy by Lenny Ford (len.studio)".
+import '../../../shared/lab-nav.css';
 import './styles.css';
 import { AudioEngine } from './audio/audio-engine';
 import { Transport } from './audio/transport';
@@ -14,6 +15,7 @@ import { Bloom } from './sim/bloom';
 import { DROP_SECONDS, Simulation, type Viewport } from './sim/simulation';
 import { bindControls, createAudioListener, type ControlHost } from './ui/controls';
 import { computeViewport, placePanelTab } from './ui/layout';
+import { attachLabDrawer } from './ui/lab-drawer';
 import { attachOrbit } from './ui/orbit';
 import { ShowMode } from './ui/show';
 import { bindSummoning } from './ui/summon';
@@ -161,6 +163,7 @@ class App implements ControlHost {
     this.renderer = new Renderer(this.canvas, this.sim, reducedMotion);
     this.sim.pointer.attach(this.canvas);
     // Turning the view by hand (or resetting it) takes it from AI mode for a while.
+    attachLabDrawer(this.canvas);
     attachOrbit(this.canvas, this.sim, () => {
       this.director.touch('view');
     });

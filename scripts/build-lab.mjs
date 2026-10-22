@@ -4,44 +4,24 @@
 // ({ title, summary }). Each is built with its own npm scripts under the path that mirrors its
 // folder (sound-toys/particle-moon → /sound-toys/particle-moon/). Then:
 //   /            serves the project named "current" in lab.json (a rewrite, so it keeps the root URL)
-//   /projects/   lists every project
+//   /projects/   lists every project (and /projects/index.json, the same for the projects' navigation)
 //
 // Usage: node scripts/build-lab.mjs        (from the repo root; needs Node 20.19+)
 
 import { execFileSync } from 'node:child_process';
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { findProjects, label, labManifest } from './lab-manifest.mjs';
 
 const ROOT = new URL('..', import.meta.url).pathname;
 const OUT = join(ROOT, 'out');
-const SKIP = new Set(['node_modules', 'out', 'scripts', 'dist']);
-
-/** Folders one or two levels down with a package.json that has a "lab" entry. */
-function findProjects() {
-  const projects = [];
-  const visit = (dir, depth) => {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      if (!entry.isDirectory() || entry.name.startsWith('.') || SKIP.has(entry.name)) continue;
-      const path = join(dir, entry.name);
-      const pkgPath = join(path, 'package.json');
-      if (existsSync(pkgPath)) {
-        const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
-        if (pkg.lab) projects.push({ dir: path, path: relative(ROOT, path), ...pkg.lab });
-      } else if (depth < 2) {
-        visit(path, depth + 1);
-      }
-    }
-  };
-  visit(ROOT, 1);
-  return projects.sort((a, b) => a.path.localeCompare(b.path));
-}
 
 function run(cwd, args) {
   execFileSync('npm', args, { cwd, stdio: 'inherit' });
 }
 
-const escape = (s) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
-const label = (folder) => folder.replace(/-/g, ' ').replace(/^./, (c) => c.toUpperCase());
+const escape = (s) =>
+  s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
 function listingPage(projects, current) {
   const groups = Map.groupBy(projects, (p) => p.path.split('/')[0]);
@@ -96,9 +76,11 @@ ${sections}
 }
 
 const lab = JSON.parse(readFileSync(join(ROOT, 'lab.json'), 'utf8'));
-const projects = findProjects();
+const projects = findProjects(ROOT);
 if (!projects.some((p) => p.path === lab.current)) {
-  throw new Error(`lab.json: "current" is ${lab.current}, which isn't a project (${projects.map((p) => p.path).join(', ')})`);
+  throw new Error(
+    `lab.json: "current" is ${lab.current}, which isn't a project (${projects.map((p) => p.path).join(', ')})`,
+  );
 }
 
 rmSync(OUT, { recursive: true, force: true });
@@ -115,6 +97,8 @@ for (const p of projects) {
 
 mkdirSync(join(OUT, 'projects'), { recursive: true });
 writeFileSync(join(OUT, 'projects', 'index.html'), listingPage(projects, lab.current));
+// The same, for each project's own navigation (see lab-manifest.mjs).
+writeFileSync(join(OUT, 'projects', 'index.json'), JSON.stringify(labManifest(ROOT)));
 writeFileSync(join(OUT, '_redirects'), `/  /${lab.current}/  200\n`);
 writeFileSync(join(OUT, '_headers'), headers.join('\n') + '\n');
 console.log(`\nBuilt ${projects.length} project(s) into out/. Landing page: ${lab.current}`);

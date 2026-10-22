@@ -8,7 +8,29 @@
   "private": true,
   "lab": {
     "title": "Particle Moon",
-    "summary": "A disc or globe of particles that answers the kick, circled by a moon."
+    "summary": "A disc or globe of particles that answers the kick, circled by a moon.",
+    "variations": [
+      {
+        "title": "Day & Night",
+        "href": ""
+      },
+      {
+        "title": "Party",
+        "href": "?m=party"
+      },
+      {
+        "title": "Ritual",
+        "href": "?m=ritual"
+      },
+      {
+        "title": "Wire",
+        "href": "?m=wire"
+      },
+      {
+        "title": "Refract",
+        "href": "?m=refract"
+      }
+    ]
   },
   "type": "module",
   "scripts": {

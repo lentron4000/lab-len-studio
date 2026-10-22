@@ -1,0 +1,182 @@
+/*!
+ * Len Studio Lab — Copyright (c) 2026 Lenny Ford, Len Studio (https://len.studio)
+ * MIT License.
+ */
+
+/* The lab's drawer, shared by its experiments: a two-line burger beside the experiment's name, and a
+   drawer from the left with the lab's levels. The drawer is always dark, whatever the page's look; the
+   experiment supplies the fonts (--mono and --sans) and, for the burger when closed, --ink. */
+
+.title {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+/* Two-line burger, on the logo's line; it turns to a cross while the drawer is open. */
+.burger {
+  pointer-events: auto;
+  display: grid;
+  align-content: center;
+  gap: 5px;
+  width: 22px;
+  height: 22px;
+  margin: -4px 0;
+  padding: 0;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.burger span {
+  display: block;
+  height: 1.5px;
+  background: var(--ink);
+  transition: transform 0.25s ease;
+}
+.burger[aria-expanded='true'] span:first-child {
+  transform: translateY(3.25px) rotate(45deg);
+}
+.burger[aria-expanded='true'] span:last-child {
+  transform: translateY(-3.25px) rotate(-45deg);
+}
+/* While the drawer's open, the burger (a cross) and the name sit over it: light, like the drawer. */
+.drawer-open .burger span {
+  background: #f2f2f0;
+}
+.drawer-open .top .title {
+  color: #f2f2f0;
+}
+/* (Until the lab's list is in, or where there isn't one: no burger.) */
+.burger[hidden] {
+  display: none;
+}
+
+.drawer {
+  /* Its own palette, the same on every page. */
+  --ink: #f2f2f0;
+  --muted: #8e9096;
+  --line: #2a2b2e;
+  --panel: rgba(11, 11, 12, 0.86);
+  color-scheme: dark;
+  position: fixed;
+  z-index: 5;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: min(320px, 86vw);
+  box-sizing: border-box;
+  padding: calc(env(safe-area-inset-top, 0px) + 64px) 16px 16px;
+  overflow-y: auto;
+  background: var(--panel);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transform: translateX(-100%);
+  transition: transform 0.3s ease;
+  color: var(--ink);
+}
+.drawer-open .drawer {
+  transform: none;
+}
+.drawer h2 {
+  margin: 0 0 12px;
+  font: 500 11px var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+}
+.drawer .note {
+  margin: 16px 0 0;
+  font: 400 12px/1.5 var(--sans);
+  color: var(--muted);
+}
+
+/* Back up a level, then the lab's groups, projects and variations. */
+.drawer .back {
+  display: block;
+  margin: 0 0 18px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: 500 11px var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  cursor: pointer;
+}
+.drawer .back:hover {
+  color: var(--ink);
+}
+.nav {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--line);
+}
+.nav li {
+  border-bottom: 1px solid var(--line);
+}
+.nav a,
+.nav button {
+  /* (Links and buttons alike: padding inside the full width, so the chevron stays in the drawer.) */
+  box-sizing: border-box;
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: 12px 18px 12px 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  text-align: left;
+  text-decoration: none;
+  font: 500 14px/1.3 var(--sans);
+  letter-spacing: 0;
+  text-transform: none;
+  cursor: pointer;
+  position: relative;
+}
+/* A chevron: this goes somewhere (deeper, or out to the experiment). */
+.nav a::after,
+.nav button::after {
+  content: '›';
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted);
+  font-size: 16px;
+}
+.nav a:hover::after,
+.nav button:hover::after {
+  color: var(--ink);
+}
+.nav .detail {
+  font: 400 12px/1.45 var(--sans);
+  color: var(--muted);
+}
+.nav .here {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-left: 10px;
+  border-radius: 50%;
+  background: #30a46c;
+  vertical-align: middle;
+  position: relative;
+  top: -1px;
+}
+/* (Words for screen readers only.) */
+.nav .unseen {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+/* Where you are: this page's group (in the lab), its project and its variation; choosing it goes home. */
+.nav li.active {
+  margin: 0 -10px;
+  padding: 0 10px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+  box-shadow: inset 2px 0 0 var(--ink);
+}

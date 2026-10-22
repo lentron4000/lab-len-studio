@@ -12,6 +12,12 @@
 *::after {
   box-sizing: border-box;
 }
+/* No focus outlines, on anything, in any state. (MIDI Map's dashed outlines aren't focus: they stay.) */
+*,
+*:focus,
+*:focus-visible {
+  outline: none;
+}
 body {
   margin: 0;
 }
@@ -196,10 +202,6 @@ canvas#c {
   margin-left: 4px;
   opacity: 1;
 }
-.keys .key:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
-}
 /* Its shortcut just pressed: lit for a moment (KEY_FLASH_MS). */
 .keys .key.flash {
   border-color: var(--ink);
@@ -220,6 +222,8 @@ canvas#c {
 }
 .top {
   position: fixed;
+  /* (Over the lab's drawer, so the burger stays in reach to close it.) */
+  z-index: 6;
   top: calc(env(safe-area-inset-top, 0px) + 16px);
   left: 16px;
   right: 16px;
@@ -256,11 +260,6 @@ canvas#c {
 }
 .brand svg [stroke]:not([stroke='none']) {
   stroke: currentColor;
-}
-.brand:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 4px;
-  border-radius: 2px;
 }
 :root[data-dark] .brand {
   --brand: #ffffff;
@@ -330,14 +329,9 @@ canvas#c {
   border-radius: 8px 8px 0 0;
   padding: 6px 10px;
   cursor: pointer;
-  outline: none !important;
 }
 .tab:hover {
   color: var(--ink);
-}
-.tab:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
 }
 .tab kbd,
 .btn kbd,
@@ -527,11 +521,6 @@ input[type='range']::-moz-range-thumb {
   background: var(--ink);
   border: 0;
 }
-input[type='range']:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 4px;
-  border-radius: 4px;
-}
 
 fieldset {
   border: 0;
@@ -581,10 +570,6 @@ legend {
   color: var(--paper);
   border-color: var(--ink);
 }
-.modes input:focus-visible + span {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
-}
 /* A control that waits on another (the moon's, while it's off): greyed out, still usable. */
 .row.off {
   opacity: 0.4;
@@ -608,10 +593,6 @@ legend {
 .hit:active {
   background: var(--ink);
   color: var(--paper);
-}
-.hit:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
 }
 #midi-status,
 #summon-status {
@@ -691,10 +672,6 @@ legend {
   min-width: 0;
   flex: 1 1 160px;
 }
-#device:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
-}
 .lvl {
   width: 72px;
   height: 6px;
@@ -761,11 +738,6 @@ legend {
   width: 1px;
   height: 1px;
   opacity: 0;
-}
-.filectl input[type='file']:focus-visible + .btn,
-.btn:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
 }
 .btn {
   font: 500 13px var(--sans);

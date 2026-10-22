@@ -83,7 +83,21 @@
     <div class="veil" aria-hidden="true"></div>
 
     <div class="top">
-      <h1>Sound Toy 01</h1>
+      <div class="title">
+        <!-- The lab's drawer (shown once the lab's list is in; there's none in a file opened from disk). -->
+        <button
+          class="burger"
+          id="menu"
+          type="button"
+          aria-controls="drawer"
+          aria-expanded="false"
+          aria-label="Lab"
+          hidden
+        >
+          <span></span><span></span>
+        </button>
+        <h1>Sound Toy 01</h1>
+      </div>
       <a
         class="brand"
         id="brand"
@@ -116,6 +130,10 @@
         <div class="midi"><i id="midi-dot" title="MIDI not connected"></i>midi</div>
       </div>
     </div>
+
+    <aside class="drawer" id="drawer" aria-label="Lab" inert>
+      <nav class="view" id="nav-view" aria-label="Lab"></nav>
+    </aside>
 
     <button class="tab" id="hide-ctl" type="button" aria-controls="panel" aria-expanded="true">
       Hide controls <kbd>H</kbd>
