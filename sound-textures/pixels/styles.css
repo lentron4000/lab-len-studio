@@ -1,0 +1,443 @@
+/*!
+ * Sound Textures — Copyright (c) 2026 Lenny Ford, Len Studio (https://len.studio)
+ * MIT License.
+ */
+
+/* The textile covers the screen (drawn on the canvas; see src/main.ts), fading in once the photo is in. */
+/* No focus outlines, on anything, in any state. */
+*,
+*:focus,
+*:focus-visible {
+  outline: none;
+}
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+body {
+  background: #0b0b0c;
+  overflow: hidden;
+  font: 500 12px/1 var(--sans);
+  color: var(--ink);
+}
+:root {
+  --ink: #f2f2f0;
+  --muted: #8e9096;
+  --panel: rgba(11, 11, 12, 0.82);
+  --line: #2a2b2e;
+  --focus: #8fb0ff;
+  --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --sans: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  color-scheme: dark;
+}
+#weave {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  opacity: 0;
+  transition: opacity 0.6s ease;
+}
+.ready #weave {
+  opacity: 1;
+}
+/* The resolution slider, on a dark pill at the bottom. */
+/* The dock: effects over the controls, bottom centre, wrapping to fit a narrow screen. */
+.dock {
+  position: fixed;
+  z-index: 2;
+  left: 16px;
+  right: 16px;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+.dock > * {
+  pointer-events: auto;
+}
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  max-width: 100%;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  background: rgba(11, 11, 12, 0.78);
+  border-radius: 999px;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  white-space: nowrap;
+}
+.controls input {
+  width: min(260px, 40vw);
+  accent-color: #f2f2f0;
+}
+.controls output {
+  min-width: 56px;
+  font-variant-numeric: tabular-nums;
+}
+/* The beat: play, tempo, and the count (the beat lit). */
+.sep {
+  width: 1px;
+  height: 18px;
+  background: var(--line);
+}
+.play {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: none;
+  color: var(--ink);
+  font: 10px var(--sans);
+  cursor: pointer;
+}
+.play[aria-pressed='true'] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: #0b0b0c;
+}
+#bpm {
+  width: 52px;
+  padding: 4px 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: none;
+  color: var(--ink);
+  font: 500 12px var(--mono);
+  text-align: right;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+#bpm::-webkit-inner-spin-button,
+#bpm::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.unit {
+  color: var(--muted);
+  margin-left: -6px;
+}
+.count {
+  display: flex;
+  gap: 4px;
+}
+.count button {
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  font: 500 10px var(--mono);
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+}
+.count button:hover {
+  color: var(--ink);
+}
+/* The chosen beat (where a new pattern lands): outlined. */
+.count button[aria-pressed='true'] {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+/* The beat playing: lit. */
+.count button.on {
+  color: #0b0b0c;
+  background: var(--ink);
+}
+.hint {
+  color: #8e9096;
+}
+.hint kbd {
+  font:
+    11px ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+  border: 1px solid #3a3b3e;
+  border-radius: 3px;
+  padding: 0 4px;
+  margin-right: 4px;
+}
+/* Idle (no pointer movement for a few seconds): the controls and cursor fade away. */
+.controls {
+  transition: opacity 0.4s ease;
+}
+.idle .controls {
+  opacity: 0;
+  pointer-events: none;
+}
+.idle,
+.idle #weave {
+  cursor: none;
+}
+
+/* ---- Top bar (as Sound Toy's, without its readouts): burger and name left, Len Studio centred. A soft
+   shade behind it keeps it readable over any image. (The burger and drawer: shared/lab-nav.css.) */
+.top {
+  position: fixed;
+  /* (Over the lab's drawer, so the burger stays in reach to close it.) */
+  z-index: 6;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding: calc(env(safe-area-inset-top, 0px) + 16px) 16px 28px;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 8px 24px;
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  background: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0));
+  pointer-events: none;
+}
+.top h1 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+.brand {
+  display: block;
+  height: 15px;
+  color: #ffffff;
+  pointer-events: auto;
+  line-height: 0;
+}
+.brand svg {
+  height: 100%;
+  width: auto;
+  display: block;
+}
+.brand svg [fill]:not([fill='none']) {
+  fill: currentColor;
+}
+
+.thumbs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.thumbs li {
+  position: relative;
+}
+.thumbs .thumb {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+  background: #1a1b1d;
+  cursor: pointer;
+}
+.thumbs img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.thumbs .thumb[aria-current='true'] {
+  border-color: var(--ink);
+  box-shadow: 0 0 0 1px var(--ink);
+}
+/* The add tile: a dashed square with a plus. */
+.thumbs .add {
+  border-style: dashed;
+  color: var(--muted);
+  font: 300 28px/1 var(--sans);
+  background: none;
+}
+.thumbs .add:hover {
+  color: var(--ink);
+  border-color: var(--ink);
+}
+/* Remove: a small cross in the corner, on hover (always, where there's no hover). */
+.thumbs .remove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.7);
+  color: #f2f2f0;
+  font: 400 15px/1 var(--sans);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.thumbs li:hover .remove,
+.thumbs .remove:focus-visible {
+  opacity: 1;
+}
+.thumbs .remove:hover {
+  background: rgba(0, 0, 0, 0.9);
+}
+@media (hover: none) {
+  .thumbs .remove {
+    opacity: 1;
+  }
+}
+
+/* ---- Drop overlay: shown while a file is dragged over the page. */
+.dropzone {
+  position: fixed;
+  z-index: 4;
+  inset: 12px;
+  display: grid;
+  place-items: center;
+  border: 2px dashed rgba(255, 255, 255, 0.8);
+  border-radius: 16px;
+  background: rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+.dropzone p {
+  margin: 0;
+  font: 500 14px var(--mono);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+.dragging .dropzone {
+  opacity: 1;
+}
+
+/* ---- A passing message (a refused file, a photo that couldn't be read). */
+.notice {
+  position: fixed;
+  z-index: 3;
+  left: 50%;
+  top: calc(env(safe-area-inset-top, 0px) + 56px);
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: var(--panel);
+  font-size: 12px;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.notice.shown {
+  opacity: 1;
+}
+
+/* ---- Effects: a row of chips over the controls, each on (filled) or off; they fade with the controls. */
+.effects {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 6px;
+  border-radius: 999px;
+  background: rgba(11, 11, 12, 0.78);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: opacity 0.4s ease;
+}
+.effects[hidden] {
+  display: none;
+}
+.effects button {
+  padding: 5px 11px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: none;
+  color: var(--muted);
+  font: 500 12px var(--sans);
+  cursor: pointer;
+}
+.effects button:hover {
+  color: var(--ink);
+}
+.effects button[aria-pressed='true'] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: #0b0b0c;
+}
+.idle .effects {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* New: a new pattern, where there's no Space bar to press (touch screens). */
+.new {
+  display: none;
+  padding: 5px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: none;
+  color: var(--ink);
+  font: 500 12px var(--sans);
+  cursor: pointer;
+}
+
+/* ---- Phones and touch screens: no keys to press, fingers to tap with, little room. */
+@media (hover: none), (max-width: 700px) {
+  .new {
+    display: block;
+  }
+  .hint {
+    display: none;
+  }
+  .count button {
+    width: 30px;
+    height: 30px;
+    font-size: 12px;
+  }
+  .play {
+    width: 32px;
+    height: 32px;
+  }
+}
+@media (max-width: 700px) {
+  /* Name left, Len Studio right: the name stays on one line. */
+  .top {
+    grid-template-columns: 1fr auto;
+  }
+  .top h1 {
+    white-space: nowrap;
+  }
+  /* The controls: a rounded panel, the slider on a row of its own. */
+  .controls {
+    border-radius: 16px;
+    gap: 10px 12px;
+    padding: 10px 14px;
+  }
+  .controls input[type='range'] {
+    flex: 1 1 140px;
+    width: auto;
+  }
+  .sep {
+    display: none;
+  }
+  .effects {
+    border-radius: 16px;
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "name": "sound-textures-pixels",
+  "version": "0.1.0",
+  "description": "A photo (a tufted textile, or your own) quilted into new patterns that fill the screen.",
+  "author": "Lenny Ford <https://len.studio>",
+  "license": "MIT",
+  "homepage": "https://len.studio",
+  "private": true,
+  "lab": {
+    "title": "Sound Texture 01",
+    "summary": "A tufted textile, or any photo you drop in, quilted into new patterns: Space for another."
+  },
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm test",
+    "cells": "python3 scripts/pixelate.py"
+  },
+  "engines": {
+    "node": ">=20.19"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "vite": "7.3.6",
+    "vitest": "4.1.11"
+  }
+}

@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Sound Texture 01</title>
+    <meta
+      name="description"
+      content="A tufted textile, or any photo you drop in, quilted into new patterns that fill the screen, from the photo down to pixels. By Lenny Ford (len.studio)."
+    />
+    <meta name="author" content="Lenny Ford, Len Studio" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500&display=swap"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <canvas
+      id="weave"
+      role="img"
+      aria-label="A dense, colourful pattern quilted from a photo. Press Space for a new one."
+    ></canvas>
+
+    <header class="top">
+      <div class="title">
+        <button
+          class="burger"
+          id="menu"
+          type="button"
+          aria-controls="drawer"
+          aria-expanded="false"
+          aria-label="Images"
+        >
+          <span></span><span></span>
+        </button>
+        <h1>Sound Texture 01</h1>
+      </div>
+      <a
+        class="brand"
+        id="brand"
+        href="https://len.studio"
+        target="_blank"
+        rel="noopener"
+        aria-label="Len Studio"
+        ><svg
+          viewBox="0 0 196 30"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+          aria-hidden="true"
+          focusable="false"
+        >
+          <path d="M0 30V0H25.7316V14.75H58.2981V30H0Z" fill="#B7FF9A" />
+          <path
+            d="M66.82 30V0H123.108V8.09211H92.5515V10.7368H122.404V18.8289H92.5515V21.9079H124.012V30H66.82Z"
+            fill="#B7FF9A"
+          />
+          <path
+            d="M132.978 30V0H167.555L175.495 26.0526V0H196V30H161.524L153.483 3.9079V30H132.978Z"
+            fill="#B7FF9A"
+          /></svg
+      ></a>
+    </header>
+
+    <!-- The drawer: this session's images (kept in this tab's memory only, never uploaded or saved), and,
+         a level up, the lab's other experiments. -->
+    <aside class="drawer" id="drawer" aria-label="Menu" inert>
+      <section class="view" id="images-view">
+        <button class="back" id="to-lab" type="button">‹ Return to Lab</button>
+        <h2>Images</h2>
+        <ul class="thumbs" id="thumbs"></ul>
+        <p class="note">
+          Drop a photo anywhere, or add one here (up to 20 MB). Photos stay in this tab: nothing is uploaded,
+          and they’re gone when you close or reload it.
+        </p>
+        <input id="file" type="file" accept="image/*" hidden />
+      </section>
+      <nav class="view" id="nav-view" aria-label="Lab" hidden></nav>
+    </aside>
+
+    <div class="dropzone" aria-hidden="true"><p>Drop a photo</p></div>
+    <p class="notice" id="notice" role="status" aria-live="polite"></p>
+
+    <!-- The dock, bottom centre: effects over the controls, wrapping to fit a narrow screen. -->
+    <div class="dock">
+      <!-- Effects: a last layer over the picture, one at a time, chosen here. -->
+      <div class="effects" id="effects" role="group" aria-label="Effects"></div>
+      <div class="controls">
+        <label for="resolution">Resolution</label>
+        <input id="resolution" type="range" min="1" max="16" step="1" value="1" />
+        <output id="resolution-out" for="resolution">Original</output>
+        <span class="sep" aria-hidden="true"></span>
+        <!-- New pattern (Space, on a keyboard): shown where there isn't one. -->
+        <button class="new" id="new" type="button" title="A new pattern (Space)">New</button>
+        <!-- The beat: a new pattern on the chosen beat of every bar (after a bar counting in). T taps the tempo. -->
+        <button
+          class="play"
+          id="play"
+          type="button"
+          aria-pressed="false"
+          title="Play: a new pattern on every 1 (P)"
+        >
+          ▶
+        </button>
+        <input id="bpm" type="number" min="40" max="220" step="1" value="120" aria-label="Tempo (BPM)" />
+        <span class="unit">BPM</span>
+        <span class="count" id="count" role="group" aria-label="The beat a new pattern lands on (1–4)">
+          <button type="button" data-beat="1" aria-pressed="true" title="New pattern on the 1 (1)">1</button>
+          <button type="button" data-beat="2" aria-pressed="false" title="New pattern on the 2 (2)">2</button>
+          <button type="button" data-beat="3" aria-pressed="false" title="New pattern on the 3 (3)">3</button>
+          <button type="button" data-beat="4" aria-pressed="false" title="New pattern on the 4 (4)">4</button>
+        </span>
+        <span class="hint"
+          ><kbd>Space</kbd> new · <kbd>P</kbd> play · <kbd>T</kbd> tap · <kbd>1</kbd>–<kbd>4</kbd> beat ·
+          <kbd>F</kbd> full</span
+        >
+      </div>
+    </div>
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>
