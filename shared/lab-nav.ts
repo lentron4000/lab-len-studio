@@ -116,11 +116,12 @@ export function renderLevel(view: HTMLElement, manifest: Manifest, level: Level,
       el('h2', '', g.name),
       list,
     );
+    // (Each by its name alone: no description.)
     g.projects.forEach((p, project) => {
-      if (p.path === opts.here) row(p.title, p.summary, opts.home, here);
+      if (p.path === opts.here) row(p.title, '', opts.home, here);
       else if (p.variations.length > 1)
-        row(p.title, p.summary, () => opts.go({ at: 'project', group: level.group, project }));
-      else row(p.title, p.summary, urlOf(p.path, p.variations[0]?.href));
+        row(p.title, '', () => opts.go({ at: 'project', group: level.group, project }));
+      else row(p.title, '', urlOf(p.path, p.variations[0]?.href));
     });
     return;
   }

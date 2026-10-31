@@ -38,7 +38,16 @@
 .burger[aria-expanded='true'] span:last-child {
   transform: translateY(-3.25px) rotate(-45deg);
 }
-/* While the drawer's open, the burger (a cross) and the name sit over it: light, like the drawer. */
+/* While the drawer's open, the burger (a cross) and the name sit over it: light, like the drawer. The
+   rest of the experiment's top bar, where it'd lie over the drawer (a phone), is put away meanwhile. */
+.drawer-open .top {
+  z-index: 51;
+}
+@media (max-width: 700px) {
+  .drawer-open .top > :not(.title) {
+    visibility: hidden;
+  }
+}
 .drawer-open .burger span {
   background: #f2f2f0;
 }
@@ -55,10 +64,11 @@
   --ink: #f2f2f0;
   --muted: #8e9096;
   --line: #2a2b2e;
-  --panel: rgba(11, 11, 12, 0.86);
+  --panel: #141516;
   color-scheme: dark;
   position: fixed;
-  z-index: 5;
+  /* The top layer: over all of an experiment's own (its burger and name, over this, while it's open). */
+  z-index: 50;
   top: 0;
   bottom: 0;
   left: 0;
@@ -67,8 +77,6 @@
   padding: calc(env(safe-area-inset-top, 0px) + 64px) 16px 16px;
   overflow-y: auto;
   background: var(--panel);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
   transform: translateX(-100%);
   transition: transform 0.3s ease;
   color: var(--ink);
