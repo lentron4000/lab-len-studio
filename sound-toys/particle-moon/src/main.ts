@@ -163,10 +163,28 @@ class App implements ControlHost {
     this.renderer = new Renderer(this.canvas, this.sim, reducedMotion);
     this.sim.pointer.attach(this.canvas);
     // Turning the view by hand (or resetting it) takes it from AI mode for a while.
+    // (Before the drawer's own listener closes it: a tap that only closes the drawer isn't a kick.)
+    let drawerWasOpen = false;
+    this.canvas.addEventListener(
+      'pointerdown',
+      () => {
+        drawerWasOpen = document.body.classList.contains('drawer-open');
+      },
+      { capture: true },
+    );
     attachLabDrawer(this.canvas);
-    attachOrbit(this.canvas, this.sim, () => {
-      this.director.touch('view');
-    });
+    attachOrbit(
+      this.canvas,
+      this.sim,
+      () => {
+        this.director.touch('view');
+      },
+      // A tap (or click) on the disc or globe: a repel, there.
+      (x, y) => {
+        const v = this.sim.viewport;
+        if (!drawerWasOpen && Math.hypot(x - v.cx, y - v.cy) <= v.radius * 1.15) this.sim.repelAt(x, y);
+      },
+    );
     byId('view-reset').addEventListener('click', () => {
       this.director.touch('view');
       this.sim.camera.reset();

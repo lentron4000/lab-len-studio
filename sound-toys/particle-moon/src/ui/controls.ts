@@ -168,10 +168,29 @@ export function bindControls(host: ControlHost): {
   const playBtn = byId('play', HTMLButtonElement);
   const deviceSelect = byId('device', HTMLSelectElement);
 
+  // Play (a Show key): the demo on, as choosing it here would, or, if it's on, the source off. It shows
+  // whether the demo's playing, whichever way it was chosen.
+  const demoBtn = byId('demo-play', HTMLButtonElement);
+  const demoLabel = demoBtn.querySelector<HTMLElement>('.demo-label')!;
+  const source = (value: string): HTMLInputElement => radios('pulse').find((r) => r.value === value)!;
+  const showDemo = (on: boolean): void => {
+    demoBtn.setAttribute('aria-pressed', String(on));
+    demoLabel.textContent = on ? '■ Stop' : '▶ Play';
+  };
+  demoBtn.addEventListener('click', () => {
+    const r = source(source('demo').checked ? 'off' : 'demo');
+    r.checked = true;
+    r.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  window.addEventListener('keydown', (e) => {
+    if (isShortcut(e, 'p')) demoBtn.click();
+  });
+
   onRadio('pulse', (v) => {
     const mode = v as SourceMode;
     fileRow.hidden = mode !== 'file';
     liveRow.hidden = mode !== 'live';
+    showDemo(mode === 'demo');
     void audio.setMode(mode);
     host.relayout();
   });

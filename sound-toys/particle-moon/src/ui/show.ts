@@ -12,7 +12,13 @@ const BUTTONS_MS = 4500;
 /** How long a key lights up when its shortcut is pressed. */
 const KEY_FLASH_MS = 350;
 /** Each Show key's shortcut. */
-const KEY_BUTTONS: Record<string, string> = { f: 'fullscreen', b: 'blackout', a: 'auto', r: 'view-reset' };
+const KEY_BUTTONS: Record<string, string> = {
+  f: 'fullscreen',
+  b: 'blackout',
+  a: 'auto',
+  p: 'demo-play',
+  r: 'view-reset',
+};
 
 /**
  * Projection support. Fullscreen (F), blackout (B), a screen wake lock while performing, and

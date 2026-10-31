@@ -60,6 +60,9 @@ const BODY_RADIUS = 0.08;
 const POLE_GRAVITY = 22000;
 /** Attract and repel: the pointer's pull or push on a fully tight shape, relative to loose. */
 const POLE_TIGHT = 2.5;
+/** A tap's repel (see repelAt): this much stronger than Repel's, at first, fading over BURST_SECONDS. */
+const BURST_STRENGTH = 3;
+const BURST_SECONDS = 0.5;
 /** Attract: particles near the mouse (within about HUDDLE_REACH shape radii) push each other HUDDLE_PACK less. */
 const HUDDLE_REACH = 0.25;
 const HUDDLE_PACK = 0.33;
@@ -363,6 +366,8 @@ export class Simulation {
   /** 0–1 per particle: how far an evaporating particle has drifted from home. It shrinks and fades by this. */
   readonly vaporFade: Float32Array;
   readonly pointer = new Pointer();
+  /** A tap's repel: where (screen px), and how much of it's left (1 → 0). */
+  private readonly burst = { x: 0, y: 0, left: 0 };
   /** Where the shape is seen from (click and drag orbits it): a view only, but the pointer acts through it. */
   readonly camera = new Camera();
   /** Formations summoned from the keys. */
@@ -761,6 +766,13 @@ export class Simulation {
     this.lastHitStep = this.steps;
   }
 
+  /** A tap's repel at (x, y), screen px: the particles there pushed away, the push fading in BURST_SECONDS. */
+  repelAt(x: number, y: number): void {
+    this.burst.x = x;
+    this.burst.y = y;
+    this.burst.left = 1;
+  }
+
   /** Advances one 1/60 s step. Returns mean kinetic energy (px²/step²) for the readout. */
   step(): number {
     const { pointer, camera } = this;
@@ -1125,6 +1137,13 @@ export class Simulation {
     const huddleReach2 = (R * HUDDLE_REACH) ** 2;
     // Gas and water: the pointer is a solid body moving through the fluid (see the fluid branch below).
     const fluidPointer = !poleOn;
+    // A tap's repel: a push out from where it landed, as Repel's (and as hard on a tight shape), fading.
+    const burst = this.burst;
+    const burstOn = burst.left > 0;
+    const burstGravity = burstOn
+      ? -POLE_GRAVITY * BURST_STRENGTH * burst.left ** 2 * (R / 220) * lerp(POLE_TIGHT, 1, slider)
+      : 0;
+    if (burstOn) burst.left = Math.max(0, burst.left - 1 / 60 / BURST_SECONDS);
     const pvx = pointer.vx;
     const pvy = pointer.vy;
     const pSpeed = Math.hypot(pvx, pvy);
@@ -1596,6 +1615,14 @@ export class Simulation {
           ax += (x[i] - hx) * ki * g;
           ay += (y[i] - hy) * ki * g;
         }
+      }
+      if (burstOn) {
+        const ps = camera / (camera - z[i]);
+        const dx = burst.x - (cx + ox * ps);
+        const dy = burst.y - (cy + oy * ps);
+        const inv = 1 / Math.pow(dx * dx + dy * dy + soft2, 1.5);
+        ax += burstGravity * dx * inv;
+        ay += burstGravity * dy * inv;
       }
       if (moonOn) {
         const mx = moon.x - x[i];

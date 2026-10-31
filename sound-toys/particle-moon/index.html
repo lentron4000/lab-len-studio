@@ -96,7 +96,7 @@
         >
           <span></span><span></span>
         </button>
-        <h1>Sound Toy 01</h1>
+        <h1><span class="series">Sound Toy </span>01</h1>
       </div>
       <a
         class="brand"
@@ -148,12 +148,21 @@
     >
       Controls <kbd>H</kbd>
     </button>
-    <!-- Show: four buttons bottom left, styled as the Controls tab, for the keyboard first (F, B, A, R); they fade when the pointer rests. -->
+    <!-- Show: buttons bottom left, styled as the Controls tab, for the keyboard first (F, A, P); they fade when the pointer rests.
+         Blackout and Reset view are off the interface, kept for their keys (B, R) and, Blackout, MIDI mapping.
+         Play (P) starts the demo. -->
     <div class="keys" role="group" aria-label="Show">
       <button class="key" id="fullscreen" type="button" aria-pressed="false" title="Fullscreen (F)">
         Fullscreen <kbd>F</kbd>
       </button>
-      <button class="key hit" id="blackout" type="button" aria-pressed="false" title="Fade to black (B)">
+      <button
+        hidden
+        class="key hit"
+        id="blackout"
+        type="button"
+        aria-pressed="false"
+        title="Fade to black (B)"
+      >
         Blackout <kbd>B</kbd>
       </button>
       <button
@@ -165,7 +174,12 @@
       >
         Auto <kbd>A</kbd>
       </button>
+      <!-- Play: the demo on and off (the Source in the controls follows). -->
+      <button class="key" id="demo-play" type="button" aria-pressed="false" title="Play the demo (P)">
+        <span class="demo-label">▶ Play</span> <kbd>P</kbd>
+      </button>
       <button
+        hidden
         class="key"
         id="view-reset"
         type="button"
@@ -365,8 +379,9 @@
             <span id="tempo-src" class="tempo-src">No source</span>
             <span class="tempo-btns">
               <button class="hit" id="tap" type="button" title="Tap tempo (T)">Tap</button>
-              <button class="hit" id="tempo-half" type="button" aria-label="Halve tempo">½</button>
-              <button class="hit" id="tempo-double" type="button" aria-label="Double tempo">×2</button>
+              <!-- (Halve and double: off the interface, kept for MIDI mapping.) -->
+              <button hidden class="hit" id="tempo-half" type="button" aria-label="Halve tempo">½</button>
+              <button hidden class="hit" id="tempo-double" type="button" aria-label="Double tempo">×2</button>
               <button class="hit" id="tempo-auto" type="button" title="Back to detected tempo" hidden>
                 Auto
               </button>

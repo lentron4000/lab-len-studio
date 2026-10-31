@@ -13,22 +13,6 @@
       {
         "title": "Day & Night",
         "href": ""
-      },
-      {
-        "title": "Party",
-        "href": "?m=party"
-      },
-      {
-        "title": "Ritual",
-        "href": "?m=ritual"
-      },
-      {
-        "title": "Wire",
-        "href": "?m=wire"
-      },
-      {
-        "title": "Refract",
-        "href": "?m=refract"
       }
     ]
   },

@@ -177,7 +177,7 @@ canvas#c {
   /* (Lifted onto the open panel's top edge when it reaches under them: see placePanelTab.) */
   bottom: calc(env(safe-area-inset-bottom, 0px) + 16px + var(--keys-lift, 0px));
   display: grid;
-  grid-template-columns: repeat(2, max-content);
+  grid-template-columns: repeat(3, max-content);
   gap: 6px;
 }
 /* (`.keys .key` throughout: Blackout is also a `.hit`, for MIDI mapping, and must not take its pill look.) */
@@ -206,6 +206,12 @@ canvas#c {
 .keys .key.flash {
   border-color: var(--ink);
   box-shadow: 0 0 0 1px var(--ink);
+}
+/* Phones and touch screens: no Fullscreen (iPhones can't, and a phone's screen is the screen). */
+@media (hover: none) and (pointer: coarse), (max-width: 640px) {
+  .keys #fullscreen {
+    display: none;
+  }
 }
 /* On (Blackout, Auto, Fullscreen): filled. */
 .keys .key[aria-pressed='true'] {
@@ -281,15 +287,15 @@ canvas#c {
   filter: none;
 }
 @media (max-width: 640px) {
+  /* The burger and the toy's number left, Len Studio centred, on one line; the readouts under them. */
   .top {
-    grid-template-columns: 1fr;
-    justify-items: center;
-    gap: 6px;
+    gap: 10px 12px;
   }
-  .brand {
-    order: -1;
+  .top .series {
+    display: none;
   }
   .top .read {
+    grid-column: 1 / -1;
     justify-self: center;
     justify-content: center;
     gap: 14px;
