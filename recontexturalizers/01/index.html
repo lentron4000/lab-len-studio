@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>Sound Texture 01</title>
+    <title>Recontexturalizer 01</title>
     <meta
       name="description"
       content="A tufted textile, or any photo you drop in, quilted into new patterns that fill the screen, from the photo down to pixels. By Lenny Ford (len.studio)."
@@ -36,7 +36,7 @@
         >
           <span></span><span></span>
         </button>
-        <h1>Sound Texture 01</h1>
+        <h1>Recontexturalizer 01</h1>
       </div>
       <a
         class="brand"
@@ -68,7 +68,7 @@
          a level up, the lab's other experiments. -->
     <aside class="drawer" id="drawer" aria-label="Menu" inert>
       <section class="view" id="images-view">
-        <button class="back" id="to-lab" type="button">‹ Return to Lab</button>
+        <button class="back" id="up" type="button">‹ Back</button>
         <h2>Images</h2>
         <ul class="thumbs" id="thumbs"></ul>
         <p class="note">
@@ -104,18 +104,36 @@
         >
           ▶
         </button>
-        <input id="bpm" type="number" min="40" max="220" step="1" value="120" aria-label="Tempo (BPM)" />
-        <span class="unit">BPM</span>
-        <span class="count" id="count" role="group" aria-label="The beat a new pattern lands on (1–4)">
+        <!-- Emoji: the picture's pixels as emoji, on and off (E). -->
+        <button
+          class="emoji"
+          id="emoji"
+          type="button"
+          aria-pressed="false"
+          aria-label="Emoji"
+          title="Emoji (E)"
+        >
+          😊
+        </button>
+        <!-- The tempo and the beat a new pattern lands on: off the interface, kept for their keys (T taps
+             the tempo; 1–4 choose the beat). -->
+        <input
+          hidden
+          id="bpm"
+          type="number"
+          min="40"
+          max="220"
+          step="1"
+          value="120"
+          aria-label="Tempo (BPM)"
+        />
+        <span hidden class="unit">BPM</span>
+        <span hidden class="count" id="count" role="group" aria-label="The beat a new pattern lands on (1–4)">
           <button type="button" data-beat="1" aria-pressed="true" title="New pattern on the 1 (1)">1</button>
           <button type="button" data-beat="2" aria-pressed="false" title="New pattern on the 2 (2)">2</button>
           <button type="button" data-beat="3" aria-pressed="false" title="New pattern on the 3 (3)">3</button>
           <button type="button" data-beat="4" aria-pressed="false" title="New pattern on the 4 (4)">4</button>
         </span>
-        <span class="hint"
-          ><kbd>Space</kbd> new · <kbd>P</kbd> play · <kbd>T</kbd> tap · <kbd>1</kbd>–<kbd>4</kbd> beat ·
-          <kbd>F</kbd> full</span
-        >
       </div>
     </div>
     <script type="module" src="./src/main.ts"></script>

@@ -1,5 +1,5 @@
 {
-  "name": "sound-textures-pixels",
+  "name": "recontexturalizers-01",
   "version": "0.1.0",
   "description": "A photo (a tufted textile, or your own) quilted into new patterns that fill the screen.",
   "author": "Lenny Ford <https://len.studio>",
@@ -7,7 +7,7 @@
   "homepage": "https://len.studio",
   "private": true,
   "lab": {
-    "title": "Sound Texture 01",
+    "title": "Recontexturalizer 01",
     "summary": "A tufted textile, or any photo you drop in, quilted into new patterns: Space for another."
   },
   "type": "module",

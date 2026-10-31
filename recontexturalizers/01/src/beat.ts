@@ -1,4 +1,4 @@
-// Sound Textures — Copyright (c) 2026 Lenny Ford, Len Studio (https://len.studio)
+// Recontexturalizers — Copyright (c) 2026 Lenny Ford, Len Studio (https://len.studio)
 // SPDX-License-Identifier: MIT.
 
 /** Beats to the bar: the count runs 1 2 3 4, and a new quilt lands on every 1. */

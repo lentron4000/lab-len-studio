@@ -1,4 +1,4 @@
-// Sound Textures — Copyright (c) 2026 Lenny Ford, Len Studio (https://len.studio)
+// Recontexturalizers — Copyright (c) 2026 Lenny Ford, Len Studio (https://len.studio)
 // SPDX-License-Identifier: MIT.
 
 /** Photo pixels per quilt cell (the textile is 89 × 67 cells of 32). */

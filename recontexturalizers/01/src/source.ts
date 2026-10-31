@@ -1,4 +1,4 @@
-// Sound Textures — Copyright (c) 2026 Lenny Ford, Len Studio (https://len.studio)
+// Recontexturalizers — Copyright (c) 2026 Lenny Ford, Len Studio (https://len.studio)
 // SPDX-License-Identifier: MIT.
 import type { Grid } from './quilt';
 import { CELLS, COLS, ROWS } from './textile';

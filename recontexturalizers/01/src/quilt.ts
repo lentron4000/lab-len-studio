@@ -1,4 +1,4 @@
-// Sound Textures — Copyright (c) 2026 Lenny Ford, Len Studio (https://len.studio)
+// Recontexturalizers — Copyright (c) 2026 Lenny Ford, Len Studio (https://len.studio)
 // SPDX-License-Identifier: MIT.
 
 /** A grid of cells: `rgb` holds three bytes per cell, row by row. */

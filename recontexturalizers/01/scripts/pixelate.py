@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Sound Textures — Copyright (c) 2026 Lenny Ford, Len Studio (https://len.studio)
+# Recontexturalizers — Copyright (c) 2026 Lenny Ford, Len Studio (https://len.studio)
 # SPDX-License-Identifier: MIT.
 """
 Writes src/textile.ts from a pixelated image: the grid's size and each cell's colour, row by row.

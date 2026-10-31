@@ -1,5 +1,5 @@
 /*!
- * Sound Textures — Copyright (c) 2026 Lenny Ford, Len Studio (https://len.studio)
+ * Recontexturalizers — Copyright (c) 2026 Lenny Ford, Len Studio (https://len.studio)
  * MIT License.
  */
 
@@ -157,19 +157,33 @@ body {
   color: #0b0b0c;
   background: var(--ink);
 }
-.hint {
-  color: #8e9096;
+/* (Off the interface, but kept: the tempo and the beat, for their keys.) */
+.controls [hidden] {
+  display: none;
 }
-.hint kbd {
-  font:
-    11px ui-monospace,
-    SFMono-Regular,
-    Menlo,
-    monospace;
-  border: 1px solid #3a3b3e;
-  border-radius: 3px;
-  padding: 0 4px;
-  margin-right: 4px;
+/* Emoji: round, beside play; the emoji dimmed while off, filled in white while on. */
+.emoji {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: none;
+  font: 13px/1 var(--sans);
+  cursor: pointer;
+  margin-left: -6px;
+}
+.emoji[aria-pressed='false'] {
+  opacity: 0.6;
+}
+.emoji:hover {
+  opacity: 1;
+}
+.emoji[aria-pressed='true'] {
+  background: var(--ink);
+  border-color: var(--ink);
 }
 /* Idle (no pointer movement for a few seconds): the controls and cursor fade away. */
 .controls {
@@ -403,8 +417,9 @@ body {
   .new {
     display: block;
   }
-  .hint {
-    display: none;
+  .emoji {
+    width: 32px;
+    height: 32px;
   }
   .count button {
     width: 30px;

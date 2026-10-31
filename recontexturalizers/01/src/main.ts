@@ -1,10 +1,11 @@
-// Sound Textures — Copyright (c) 2026 Lenny Ford, Len Studio (https://len.studio)
+// Recontexturalizers — Copyright (c) 2026 Lenny Ford, Len Studio (https://len.studio)
 // SPDX-License-Identifier: MIT.
 import '../../../shared/lab-nav.css';
-import { loadManifest, renderLevel, type Level } from '../../../shared/lab-nav';
+import { loadManifest, locate, renderLevel, type Level } from '../../../shared/lab-nav';
 import textileUrl from './assets/textile.webp';
 import { BeatClock, TapTempo } from './beat';
 import { createEffects, EFFECTS, type Moment } from './effects';
+import { BACKING, emojiSet } from '../../shared/emoji';
 import { PHOTO_CELL, refusal, workingSize } from './photo';
 import type { Grid } from './quilt';
 import { ease, TRANSITIONS, turned } from './transitions';
@@ -34,7 +35,7 @@ const TRANSITION_BEATS = 4;
 /** Thumbnails: square, this many pixels a side. */
 const THUMB = 160;
 /** This experiment's place in the lab (its folder), so the lab's navigation can mark it. */
-const HERE = 'sound-textures/pixels';
+const HERE = 'recontexturalizers/01';
 
 /** The screen. What's painted (the pattern and its transitions) goes on `canvas`, off screen, and is
  * shown here through the effects (see effects.ts). */
@@ -44,6 +45,7 @@ const ctx = canvas.getContext('2d');
 const slider = byId<HTMLInputElement>('resolution');
 const readout = byId<HTMLOutputElement>('resolution-out');
 const playButton = byId<HTMLButtonElement>('play');
+const emojiButton = byId<HTMLButtonElement>('emoji');
 const bpmInput = byId<HTMLInputElement>('bpm');
 const countOut = byId<HTMLElement>('count');
 const menu = byId<HTMLButtonElement>('menu');
@@ -53,7 +55,7 @@ const fileInput = byId<HTMLInputElement>('file');
 const notice = byId<HTMLParagraphElement>('notice');
 const imagesView = byId<HTMLElement>('images-view');
 const navView = byId<HTMLElement>('nav-view');
-if (!ctx) throw new Error('Sound Textures: 2D canvas is not available');
+if (!ctx) throw new Error('Recontexturalizers: 2D canvas is not available');
 
 /** A photo ready to quilt: its working copy (cols × rows cells of PHOTO_CELL), and its cell colours. */
 interface Source {
@@ -111,7 +113,7 @@ let current: Woven | null = null;
 
 function byId<T extends HTMLElement>(id: string): T {
   const el = document.getElementById(id);
-  if (!el) throw new Error(`Sound Textures: #${id} is missing`);
+  if (!el) throw new Error(`Recontexturalizers: #${id} is missing`);
   return el as T;
 }
 
@@ -277,8 +279,15 @@ const pixelSize = (): number => Number(slider.value);
 
 function setSize(size: number): void {
   slider.value = String(size);
-  readout.textContent = size === 1 ? 'Original' : `${size} px`;
+  readout.textContent = emojiMode ? `Emoji ${tileOf(size)} px` : size === 1 ? 'Original' : `${size} px`;
 }
+
+/** Emoji mode (😊 beside play, or E): the picture's pixels drawn as emoji (see shared/emoji). */
+let emojiMode = false;
+/** Emoji are never drawn smaller than this (CSS px): at Original, they're this size. */
+const EMOJI_MIN = 10;
+/** The size of the picture's tiles (pixels, or emoji) at a slider size, in the mode it's in. */
+const tileOf = (size: number, emoji = emojiMode): number => (emoji ? Math.max(EMOJI_MIN, size) : size);
 
 /** Sizes the canvas to the screen (which clears it). */
 function fitCanvas(layout: Layout): void {
@@ -301,9 +310,10 @@ function show(): void {
  * all of it: a pixel over two shapes stays one colour instead of turning to mud, as a pixelated photo
  * looks.
  */
-function paint(c: CanvasRenderingContext2D, woven: Woven, size: number): void {
+function paint(c: CanvasRenderingContext2D, woven: Woven, sliderSize: number, emoji = emojiMode): void {
   const { pyramid, layout } = woven;
   const { dpr, left, top, gridWidth, gridHeight } = layout;
+  const size = tileOf(sliderSize, emoji);
   c.setTransform(1, 0, 0, 1, 0, 0);
   const dx = Math.round(left * dpr);
   const dy = Math.round(top * dpr);
@@ -330,10 +340,53 @@ function paint(c: CanvasRenderingContext2D, woven: Woven, size: number): void {
   s.drawImage(thirds, 0, 0, across, down);
   c.imageSmoothingEnabled = false;
   c.drawImage(small, dx, dy, across * size * dpr, down * size * dpr);
+  if (emoji) drawEmoji(c, small, across, down, size * dpr, dx, dy);
+}
+
+/**
+ * Emoji mode: over the pixels just painted (dimmed to a backing), each pixel's nearest emoji. Tiles are
+ * snapped to device pixels, so the grid stays even.
+ */
+function drawEmoji(
+  c: CanvasRenderingContext2D,
+  small: HTMLCanvasElement,
+  across: number,
+  down: number,
+  tile: number,
+  dx: number,
+  dy: number,
+): void {
+  c.fillStyle = `rgba(0, 0, 0, ${1 - BACKING})`;
+  c.fillRect(dx, dy, across * tile, down * tile);
+  const set = emojiSet(tile);
+  const px = small.getContext('2d')!.getImageData(0, 0, across, down).data;
+  c.imageSmoothingEnabled = true;
+  for (let y = 0; y < down; y++)
+    for (let x = 0; x < across; x++) {
+      const o = (y * across + x) * 4;
+      // (Its place picks among the near matches: fixed per place, so redrawing doesn't flicker.)
+      const salt = (Math.sin(x * 127.1 + y * 311.7) * 43758.5453) % 1;
+      const k = set.pick(px[o], px[o + 1], px[o + 2], Math.abs(salt));
+      const x0 = Math.round(dx + x * tile);
+      const y0 = Math.round(dy + y * tile);
+      c.drawImage(
+        set.atlas,
+        k * set.tile,
+        0,
+        set.tile,
+        set.tile,
+        x0,
+        y0,
+        Math.round(dx + (x + 1) * tile) - x0,
+        Math.round(dy + (y + 1) * tile) - y0,
+      );
+    }
 }
 
 slider.addEventListener('input', () => {
   stopSharpening();
+  // (Moved by hand: nothing to go back to when emoji's off.)
+  sizeBeforeEmoji = null;
   show();
   // The quilt made ahead is still good; its picture and timings are redone for the new size.
   schedulePrepare();
@@ -345,6 +398,9 @@ slider.addEventListener('input', () => {
 interface Prepared {
   woven: Woven;
   size: number;
+  /** Drawn as emoji; and its tiles' size (CSS px: the slider's size, or in emoji mode at least EMOJI_MIN). */
+  emoji: boolean;
+  tile: number;
   picture: HTMLCanvasElement;
   /** Tiles: the pixels at that resolution, across and down from the grid's top left. */
   across: number;
@@ -377,7 +433,8 @@ async function prepare(): Promise<void> {
     prepared &&
     prepared.woven.source === src &&
     sameScreen(prepared.woven.layout, layout) &&
-    prepared.size === size
+    prepared.size === size &&
+    prepared.emoji === emojiMode
   )
     return;
   let woven = prepared?.woven;
@@ -390,15 +447,18 @@ async function prepare(): Promise<void> {
   // (Anything changed meanwhile: a newer call has it in hand.)
   if (source !== src || pixelSize() !== size || !sameScreen(measure(), layout)) return;
   const p = await ready(woven, size);
-  if (source !== src || pixelSize() !== size || !sameScreen(measure(), layout)) return;
+  if (source !== src || pixelSize() !== size || p.emoji !== emojiMode || !sameScreen(measure(), layout))
+    return;
   prepared = p;
 }
 
 /** A quilt's picture at a resolution, and when each of its tiles turns over in the transition. */
-async function ready(woven: Woven, size: number): Promise<Prepared> {
+async function ready(woven: Woven, sliderSize: number): Promise<Prepared> {
   const { layout } = woven;
+  const emoji = emojiMode;
+  const size = tileOf(sliderSize, emoji);
   const picture = makeCanvas(canvas.width, canvas.height);
-  paint(picture.getContext('2d')!, woven, size);
+  paint(picture.getContext('2d')!, woven, sliderSize, emoji);
   const across = Math.ceil(layout.gridWidth / size);
   const down = Math.ceil(layout.gridHeight / size);
   // Each tile's new colour, from the picture as it'll be: colour families arrive in turn.
@@ -432,7 +492,16 @@ async function ready(woven: Woven, size: number): Promise<Prepared> {
     },
     [colours.buffer],
   );
-  return { woven, size, picture, across, down, arrival: new Float32Array(r.arrival) };
+  return {
+    woven,
+    size: sliderSize,
+    emoji,
+    tile: size,
+    picture,
+    across,
+    down,
+    arrival: new Float32Array(r.arrival),
+  };
 }
 
 // ---- The transition (Colour groups): the new quilt floods in one colour family at a time.
@@ -507,7 +576,7 @@ function bringIn(p: Prepared, then: () => void): void {
     old,
     next: p.picture,
     layout: p.woven.layout,
-    size: p.size,
+    size: p.tile,
     across: p.across,
     down: p.down,
     arrival: p.arrival,
@@ -650,6 +719,37 @@ for (const e of EFFECTS) {
   });
   effectsBar.append(b);
 }
+
+/** E: emoji mode on and off, the same pattern redrawn, brought in through the transition. */
+/** The slider's size before emoji raised it to EMOJI_MIN, to go back to when emoji's off (unless it's moved). */
+let sizeBeforeEmoji: number | null = null;
+
+async function toggleEmoji(): Promise<void> {
+  emojiMode = !emojiMode;
+  emojiButton.setAttribute('aria-pressed', String(emojiMode));
+  // In emoji, the slider starts at EMOJI_MIN (below it, emoji are no smaller): all of it does something.
+  if (emojiMode) {
+    sizeBeforeEmoji = pixelSize() < EMOJI_MIN ? pixelSize() : null;
+    slider.min = String(EMOJI_MIN);
+  } else {
+    slider.min = '1';
+    if (sizeBeforeEmoji !== null) slider.value = String(sizeBeforeEmoji);
+    sizeBeforeEmoji = null;
+  }
+  setSize(pixelSize());
+  const woven = current;
+  if (!woven) return;
+  stopSharpening();
+  const p = await ready(woven, pixelSize());
+  if (current !== woven) return;
+  bringIn(p, () => undefined);
+  schedulePrepare();
+}
+
+emojiButton.addEventListener('click', () => {
+  emojiButton.blur();
+  void toggleEmoji();
+});
 
 // ---- A new photo: its pattern comes in at 16 px, then sharpens step by step to the photo itself.
 
@@ -841,7 +941,19 @@ async function showLevel(level: Level): Promise<void> {
   renderLevel(navView, m, level, { here: HERE, home: showImages, go: (l) => void showLevel(l) });
   navView.querySelector<HTMLElement>('.back, .nav a, .nav button')?.focus({ preventScroll: true });
 }
-byId('to-lab').addEventListener('click', () => void showLevel({ at: 'lab' }));
+// Back one level: to this experiment's group (named once the lab's list is in; the lab, if it isn't).
+const up = byId<HTMLButtonElement>('up');
+const groupHere = async (): Promise<{ name: string; group: number } | null> => {
+  const m = await loadManifest();
+  const at = m && locate(m, HERE);
+  return m && at ? { name: m.groups[at.group].name, group: at.group } : null;
+};
+void groupHere().then((g) => {
+  if (g) up.textContent = `‹ Back to ${g.name}`;
+});
+up.addEventListener('click', () => {
+  void groupHere().then((g) => showLevel(g ? { at: 'group', group: g.group } : { at: 'lab' }));
+});
 display.addEventListener('pointerdown', () => setDrawer(false));
 
 // Drag and drop, anywhere on the page.
@@ -904,6 +1016,7 @@ window.addEventListener('keydown', (e) => {
     if (document.fullscreenElement) void document.exitFullscreen();
     else void document.documentElement.requestFullscreen().catch(() => undefined);
   } else if (e.code === 'KeyP') setPlaying(!clock.running);
+  else if (e.code === 'KeyE') void toggleEmoji();
   else if (/^Digit[1-4]$/.test(e.code)) setTrigger(Number(e.code.slice(5)));
   else if (e.code === 'KeyT') {
     const bpm = taps.tap(seconds());
