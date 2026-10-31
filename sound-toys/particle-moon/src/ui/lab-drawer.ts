@@ -17,7 +17,7 @@ function currentVariation(search: string): string | undefined {
 
 /**
  * The lab's drawer: the burger beside the name opens it on this experiment's own ways in (its looks,
- * the one you're in marked), with "Return to Lab" leading up to the lab's other experiments. Hidden
+ * the one you're in marked), with a back link a level up, to its group, and from there the lab. Hidden
  * where there's no lab (the single file, opened from disk).
  */
 export function attachLabDrawer(canvas: HTMLElement): void {
@@ -49,7 +49,7 @@ export function attachLabDrawer(canvas: HTMLElement): void {
     const at = m && locate(m, HERE);
     if (!m || !at) return;
     manifest = m;
-    home = { at: 'project', ...at, top: true };
+    home = { at: 'project', ...at };
     menu.hidden = false;
   });
   menu.addEventListener('click', () => {

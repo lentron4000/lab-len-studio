@@ -1,8 +1,9 @@
 // The lab's projects, as the build and each project's navigation see them.
 //
 // A project is any folder, one or two levels down, whose package.json has a "lab" entry:
-//   { "title": "…", "summary": "…", "variations": [{ "title": "…", "href": "?m=…" }] }
-// ("variations" is optional: the ways into it, each a query or path relative to the project's URL).
+//   { "title": "…", "summary": "…", "variations": [{ "title": "…", "href": "?m=…" }], "hidden": true }
+// ("variations" is optional: the ways into it, each a query or path relative to the project's URL.
+// "hidden" is optional too: built and served at its URL, but not listed, so only those given it find it.)
 
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
@@ -38,7 +39,7 @@ export const label = (folder) => folder.replace(/-/g, ' ').replace(/\b\w/g, (c) 
  */
 export function labManifest(root) {
   const { current } = JSON.parse(readFileSync(join(root, 'lab.json'), 'utf8'));
-  const projects = findProjects(root);
+  const projects = findProjects(root).filter((p) => !p.hidden);
   const groups = Map.groupBy(projects, (p) => p.path.split('/')[0]);
   return {
     current,

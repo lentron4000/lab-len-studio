@@ -6,7 +6,7 @@
 
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { extname, join, normalize } from 'node:path';
-import { labManifest } from './lab-manifest.mjs';
+import { findProjects, labManifest } from './lab-manifest.mjs';
 
 const ROOT = new URL('..', import.meta.url).pathname;
 const OUT = join(ROOT, 'out');
@@ -36,7 +36,8 @@ export function labDevServer(here) {
       server.middlewares.use((req, res, next) => {
         const url = req.url ?? '/';
         const path = decodeURIComponent(url.split('?')[0]);
-        const others = labManifest(ROOT).groups.flatMap((g) => g.projects);
+        // (Hidden ones too: they're not listed, but they're there.)
+        const others = findProjects(ROOT);
         const project = others.find(
           (p) => p.path !== here && (path === `/${p.path}` || path.startsWith(`/${p.path}/`)),
         );

@@ -4,7 +4,8 @@
 // ({ title, summary }). Each is built with its own npm scripts under the path that mirrors its
 // folder (sound-toys/particle-moon → /sound-toys/particle-moon/). Then:
 //   /            serves the project named "current" in lab.json (a rewrite, so it keeps the root URL)
-//   /projects/   lists every project (and /projects/index.json, the same for the projects' navigation)
+//   /projects/   lists every project (and /projects/index.json, the same for the projects' navigation),
+//                but those marked "hidden": they're built, at their URLs, just not listed
 //
 // Usage: node scripts/build-lab.mjs        (from the repo root; needs Node 20.19+)
 
@@ -77,9 +78,9 @@ ${sections}
 
 const lab = JSON.parse(readFileSync(join(ROOT, 'lab.json'), 'utf8'));
 const projects = findProjects(ROOT);
-if (!projects.some((p) => p.path === lab.current)) {
+if (!projects.some((p) => p.path === lab.current && !p.hidden)) {
   throw new Error(
-    `lab.json: "current" is ${lab.current}, which isn't a project (${projects.map((p) => p.path).join(', ')})`,
+    `lab.json: "current" is ${lab.current}, which isn't a listed project (${projects.map((p) => p.path).join(', ')})`,
   );
 }
 
@@ -96,9 +97,19 @@ for (const p of projects) {
 }
 
 mkdirSync(join(OUT, 'projects'), { recursive: true });
-writeFileSync(join(OUT, 'projects', 'index.html'), listingPage(projects, lab.current));
+writeFileSync(
+  join(OUT, 'projects', 'index.html'),
+  listingPage(
+    projects.filter((p) => !p.hidden),
+    lab.current,
+  ),
+);
 // The same, for each project's own navigation (see lab-manifest.mjs).
 writeFileSync(join(OUT, 'projects', 'index.json'), JSON.stringify(labManifest(ROOT)));
 writeFileSync(join(OUT, '_redirects'), `/  /${lab.current}/  200\n`);
 writeFileSync(join(OUT, '_headers'), headers.join('\n') + '\n');
-console.log(`\nBuilt ${projects.length} project(s) into out/. Landing page: ${lab.current}`);
+const hidden = projects.filter((p) => p.hidden).map((p) => p.path);
+console.log(
+  `\nBuilt ${projects.length} project(s) into out/. Landing page: ${lab.current}` +
+    (hidden.length ? `. Not listed: ${hidden.join(', ')}` : ''),
+);

@@ -18,17 +18,15 @@ export interface Project {
   variations: { title: string; href: string }[];
 }
 
-/**
- * Where the drawer's navigation is: the lab, a group of it, or a project of a group. `top`: the
- * project is the drawer's home (its back link returns to the lab).
- */
+/** Where the drawer's navigation is: the lab, a group of it, or a project of a group. */
 export type Level =
-  | { at: 'lab' }
-  | { at: 'group'; group: number }
-  | { at: 'project'; group: number; project: number; top?: boolean };
+  { at: 'lab' } | { at: 'group'; group: number } | { at: 'project'; group: number; project: number };
 
 export interface NavOptions {
-  /** This page's project (its path): it and its group are marked as where you are; choosing either goes home. */
+  /**
+   * This page's project (its path): it and its group are marked as where you are. Choosing it goes home;
+   * choosing its group opens it (or, if this is all there is in it, goes home too).
+   */
   here: string;
   /** This page's variation (its href), marked as where you are among its project's. */
   current?: string;
@@ -104,8 +102,10 @@ export function renderLevel(view: HTMLElement, manifest: Manifest, level: Level,
     manifest.groups.forEach((g, group) => {
       const n = g.projects.length;
       const detail = `${n} ${n === 1 ? 'experiment' : 'experiments'}`;
-      if (g.projects.some((p) => p.path === opts.here)) row(g.name, detail, opts.home, here);
-      else row(g.name, detail, () => opts.go({ at: 'group', group }));
+      const ours = g.projects.some((p) => p.path === opts.here);
+      // (This page's group: marked; it opens like any other, unless this page is all there is in it.)
+      if (ours && n === 1) row(g.name, detail, opts.home, here);
+      else row(g.name, detail, () => opts.go({ at: 'group', group }), ours ? here : undefined);
     });
     return;
   }
@@ -125,9 +125,8 @@ export function renderLevel(view: HTMLElement, manifest: Manifest, level: Level,
     return;
   }
   const p = g.projects[level.project];
-  const up = level.top
-    ? back('Return to Lab', () => opts.go({ at: 'lab' }))
-    : back(`Back to ${g.name}`, () => opts.go({ at: 'group', group: level.group }));
+  // (Back one level: to its group.)
+  const up = back(`Back to ${g.name}`, () => opts.go({ at: 'group', group: level.group }));
   view.replaceChildren(up, el('h2', '', p.title), list);
   for (const v of p.variations) {
     if (p.path === opts.here && v.href === opts.current) row(v.title, '', opts.home, here);
