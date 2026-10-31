@@ -1,0 +1,319 @@
+/*!
+ * Recontexturalizers — Copyright (c) 2026 Lenny Ford, Len Studio (https://len.studio)
+ * MIT License.
+ */
+
+/* The camera's picture covers the screen (drawn on the canvas; see src/render.ts), fading in once live. */
+/* No focus outlines, on anything, in any state. */
+*,
+*:focus,
+*:focus-visible {
+  outline: none;
+}
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+body {
+  background: #0b0b0c;
+  overflow: hidden;
+  font: 500 12px/1 var(--sans);
+  color: var(--ink);
+}
+:root {
+  --ink: #f2f2f0;
+  --muted: #8e9096;
+  --panel: rgba(11, 11, 12, 0.82);
+  --line: #2a2b2e;
+  --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --sans: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  color-scheme: dark;
+}
+#view {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  opacity: 0;
+  transition: opacity 0.6s ease;
+}
+.live #view {
+  opacity: 1;
+}
+/* (Drawn from, never shown: kept in the page, not hidden, so every browser keeps it playing.) */
+.source {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ---- Before the camera's on: a button in the middle, and a line under it. */
+.start {
+  position: fixed;
+  z-index: 1;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 16px;
+  padding: 0 16px;
+  text-align: center;
+  transition: opacity 0.4s ease;
+}
+.live .start {
+  opacity: 0;
+  pointer-events: none;
+}
+.start button {
+  padding: 12px 22px;
+  border: 1px solid var(--ink);
+  border-radius: 999px;
+  background: var(--ink);
+  color: #0b0b0c;
+  font: 500 13px var(--sans);
+  cursor: pointer;
+}
+.start button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.start p {
+  max-width: 34ch;
+  margin: 0;
+  color: var(--muted);
+  font: 400 13px/1.5 var(--sans);
+}
+
+/* ---- The dock: the controls, bottom centre, wrapping to fit a narrow screen. */
+.dock {
+  position: fixed;
+  z-index: 2;
+  left: 16px;
+  right: 16px;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+  transition: opacity 0.4s ease;
+}
+/* (Only once there's a picture to change.) */
+body:not(.live) .dock {
+  opacity: 0;
+}
+body.live .dock > * {
+  pointer-events: auto;
+}
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  max-width: 100%;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  background: rgba(11, 11, 12, 0.78);
+  border-radius: 999px;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  white-space: nowrap;
+}
+.controls input {
+  width: min(260px, 40vw);
+  accent-color: #f2f2f0;
+}
+/* (The slider, off in a mode of a fixed size.) */
+.controls input:disabled,
+.controls input:disabled ~ output,
+.controls:has(input:disabled) label {
+  opacity: 0.35;
+}
+.controls output {
+  min-width: 56px;
+  font-variant-numeric: tabular-nums;
+}
+/* ---- The modes (as 01's effects): a row of chips over the controls, the one on filled. */
+.modes {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 6px;
+  border-radius: 999px;
+  background: rgba(11, 11, 12, 0.78);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: opacity 0.4s ease;
+}
+.modes button {
+  display: grid;
+  place-items: center;
+  min-width: 34px;
+  height: 28px;
+  padding: 5px 11px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: none;
+  color: var(--muted);
+  font: 500 12px/1.2 var(--sans);
+  cursor: pointer;
+}
+.modes button:hover {
+  color: var(--ink);
+}
+.modes button[aria-pressed='true'] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: #0b0b0c;
+}
+.modes svg {
+  display: block;
+}
+/* (The emoji chip: the emoji itself, a touch bigger.) */
+.modes button[data-mode='emoji'] {
+  font-size: 14px;
+  line-height: 1;
+}
+/* (The Matrix chip: one glyph of its code, mirrored, in its green; darker on the light pill when on.) */
+.modes .code {
+  display: block;
+  transform: scaleX(-1);
+  font:
+    600 14px/1 'Hiragino Sans',
+    'MS Gothic',
+    'Noto Sans JP',
+    monospace;
+  color: #20e35d;
+}
+.modes button[aria-pressed='true'] .code {
+  color: #0b8a34;
+}
+/* (The emoji chip, dimmed while off.) */
+.modes button[data-mode='emoji'][aria-pressed='false'] {
+  opacity: 0.6;
+}
+.modes button[data-mode='emoji'][aria-pressed='false']:hover {
+  opacity: 1;
+}
+.idle .modes {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Idle (no pointer movement for a few seconds): the controls and cursor fade away. */
+.controls {
+  transition: opacity 0.4s ease;
+}
+.idle .controls {
+  opacity: 0;
+  pointer-events: none;
+}
+.idle.live,
+.idle.live #view {
+  cursor: none;
+}
+
+/* ---- Top bar (as 01's): burger and name left, Len Studio centred, over a soft shade. (The burger and
+   drawer: shared/lab-nav.css.) */
+.top {
+  position: fixed;
+  /* (Over the lab's drawer, so the burger stays in reach to close it.) */
+  z-index: 6;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding: calc(env(safe-area-inset-top, 0px) + 16px) 16px 28px;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 8px 24px;
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  background: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0));
+  pointer-events: none;
+}
+.top h1 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+.brand {
+  display: block;
+  height: 15px;
+  color: #ffffff;
+  pointer-events: auto;
+  line-height: 0;
+}
+.brand svg {
+  height: 100%;
+  width: auto;
+  display: block;
+}
+.brand svg [fill]:not([fill='none']) {
+  fill: currentColor;
+}
+/* The cameras: the lab's list, without chevrons (choosing one stays here). */
+#cameras:empty {
+  display: none;
+}
+#cameras button::after {
+  content: none;
+}
+#cameras {
+  margin-bottom: 20px;
+}
+
+/* ---- A passing message (a camera that couldn't be switched to). */
+.notice {
+  position: fixed;
+  z-index: 3;
+  left: 50%;
+  top: calc(env(safe-area-inset-top, 0px) + 56px);
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: var(--panel);
+  font-size: 12px;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.notice.shown {
+  opacity: 1;
+}
+
+/* ---- Phones and touch screens: no keys to press, little room. */
+@media (max-width: 700px) {
+  /* Name left, Len Studio right: the name stays on one line. */
+  .top {
+    grid-template-columns: 1fr auto;
+  }
+  .top h1 {
+    white-space: nowrap;
+  }
+  .modes {
+    border-radius: 16px;
+  }
+  .controls {
+    border-radius: 16px;
+    gap: 10px 12px;
+    padding: 10px 14px;
+  }
+  .controls input[type='range'] {
+    flex: 1 1 140px;
+    width: auto;
+  }
+}

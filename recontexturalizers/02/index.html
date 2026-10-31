@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Recontexturalizer 02</title>
+    <meta
+      name="description"
+      content="Your camera, live, down to pixels: the picture redrawn as you move. By Lenny Ford (len.studio)."
+    />
+    <meta name="author" content="Lenny Ford, Len Studio" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500&display=swap"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <canvas id="view" role="img" aria-label="Your camera’s picture, live, redrawn in pixels."></canvas>
+    <!-- The camera's video: never shown itself, only drawn from. -->
+    <video id="video" class="source" muted playsinline aria-hidden="true"></video>
+
+    <header class="top">
+      <div class="title">
+        <button
+          class="burger"
+          id="menu"
+          type="button"
+          aria-controls="drawer"
+          aria-expanded="false"
+          aria-label="Cameras"
+        >
+          <span></span><span></span>
+        </button>
+        <h1>Recontexturalizer 02</h1>
+      </div>
+      <a
+        class="brand"
+        id="brand"
+        href="https://len.studio"
+        target="_blank"
+        rel="noopener"
+        aria-label="Len Studio"
+        ><svg
+          viewBox="0 0 196 30"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+          aria-hidden="true"
+          focusable="false"
+        >
+          <path d="M0 30V0H25.7316V14.75H58.2981V30H0Z" fill="#B7FF9A" />
+          <path
+            d="M66.82 30V0H123.108V8.09211H92.5515V10.7368H122.404V18.8289H92.5515V21.9079H124.012V30H66.82Z"
+            fill="#B7FF9A"
+          />
+          <path
+            d="M132.978 30V0H167.555L175.495 26.0526V0H196V30H161.524L153.483 3.9079V30H132.978Z"
+            fill="#B7FF9A"
+          /></svg
+      ></a>
+    </header>
+
+    <!-- The drawer: the cameras to choose from, and, a level up, the lab's other experiments. -->
+    <aside class="drawer" id="drawer" aria-label="Menu" inert>
+      <section class="view" id="cameras-view">
+        <button class="back" id="up" type="button">‹ Back</button>
+        <h2>Camera</h2>
+        <ul class="nav" id="cameras"></ul>
+        <p class="note">The camera’s picture stays on this device: nothing is recorded, sent or saved.</p>
+      </section>
+      <nav class="view" id="nav-view" aria-label="Lab" hidden></nav>
+    </aside>
+
+    <!-- Before the camera's on: asking for it (the browser asks too), or why it couldn't be had. -->
+    <div class="start" id="start">
+      <button type="button" id="start-camera">Start camera</button>
+      <p id="start-note">The camera’s picture stays on this device: nothing is recorded, sent or saved.</p>
+    </div>
+
+    <p class="notice" id="notice" role="status" aria-live="polite"></p>
+
+    <!-- The dock, bottom centre: the modes over the controls, wrapping to fit a narrow screen. -->
+    <div class="dock">
+      <div class="modes" id="modes" role="group" aria-label="Modes"></div>
+      <div class="controls">
+        <label for="resolution">Resolution</label>
+        <input id="resolution" type="range" min="1" max="16" step="1" value="1" />
+        <output id="resolution-out" for="resolution">Original</output>
+      </div>
+    </div>
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>
