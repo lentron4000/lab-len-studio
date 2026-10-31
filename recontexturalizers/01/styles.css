@@ -173,7 +173,6 @@ body {
   background: none;
   font: 13px/1 var(--sans);
   cursor: pointer;
-  margin-left: -6px;
 }
 .emoji[aria-pressed='false'] {
   opacity: 0.6;
@@ -400,22 +399,34 @@ body {
   pointer-events: none;
 }
 
-/* New: a new pattern, where there's no Space bar to press (touch screens). */
+.buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+/* New: a new pattern, where there's no Space bar to press (touch screens): a refresh icon, round, as play. */
 .new {
   display: none;
-  padding: 5px 12px;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  padding: 0;
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: 50%;
   background: none;
   color: var(--ink);
-  font: 500 12px var(--sans);
   cursor: pointer;
+}
+.new svg {
+  display: block;
 }
 
 /* ---- Phones and touch screens: no keys to press, fingers to tap with, little room. */
 @media (hover: none), (max-width: 700px) {
   .new {
-    display: block;
+    display: grid;
+    width: 32px;
+    height: 32px;
   }
   .emoji {
     width: 32px;
@@ -432,12 +443,12 @@ body {
   }
 }
 @media (max-width: 700px) {
-  /* Name left, Len Studio right: the name stays on one line. */
-  .top {
-    grid-template-columns: 1fr auto;
-  }
+  /* The burger and the number left, Len Studio centred (the series' name, there's no room for). */
   .top h1 {
     white-space: nowrap;
+  }
+  .top .series {
+    display: none;
   }
   /* The controls: a rounded panel, the slider on a row of its own. */
   .controls {
@@ -448,6 +459,10 @@ body {
   .controls input[type='range'] {
     flex: 1 1 140px;
     width: auto;
+  }
+  .buttons {
+    flex-basis: 100%;
+    justify-content: center;
   }
   .sep {
     display: none;

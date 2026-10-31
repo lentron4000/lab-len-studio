@@ -36,7 +36,7 @@
         >
           <span></span><span></span>
         </button>
-        <h1>Recontexturalizer 01</h1>
+        <h1><span class="series">Recontexturalizer </span>01</h1>
       </div>
       <a
         class="brand"
@@ -92,29 +92,47 @@
         <input id="resolution" type="range" min="1" max="16" step="1" value="1" />
         <output id="resolution-out" for="resolution">Original</output>
         <span class="sep" aria-hidden="true"></span>
-        <!-- New pattern (Space, on a keyboard): shown where there isn't one. -->
-        <button class="new" id="new" type="button" title="A new pattern (Space)">New</button>
-        <!-- The beat: a new pattern on the chosen beat of every bar (after a bar counting in). T taps the tempo. -->
-        <button
-          class="play"
-          id="play"
-          type="button"
-          aria-pressed="false"
-          title="Play: a new pattern on every 1 (P)"
-        >
-          ▶
-        </button>
-        <!-- Emoji: the picture's pixels as emoji, on and off (E). -->
-        <button
-          class="emoji"
-          id="emoji"
-          type="button"
-          aria-pressed="false"
-          aria-label="Emoji"
-          title="Emoji (E)"
-        >
-          😊
-        </button>
+        <!-- The round buttons, kept together (on a phone, a row of their own). -->
+        <span class="buttons">
+          <!-- New pattern (Space, on a keyboard): shown where there isn't one. -->
+          <button class="new" id="new" type="button" aria-label="New pattern" title="A new pattern (Space)">
+            <svg
+              viewBox="0 0 16 16"
+              width="13"
+              height="13"
+              aria-hidden="true"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9" />
+              <path d="M12.6 1.8v2.9H9.7" />
+            </svg>
+          </button>
+          <!-- The beat: a new pattern on the chosen beat of every bar (after a bar counting in). T taps the tempo. -->
+          <button
+            class="play"
+            id="play"
+            type="button"
+            aria-pressed="false"
+            title="Play: a new pattern on every 1 (P)"
+          >
+            ▶
+          </button>
+          <!-- Emoji: the picture's pixels as emoji, on and off (E). -->
+          <button
+            class="emoji"
+            id="emoji"
+            type="button"
+            aria-pressed="false"
+            aria-label="Emoji"
+            title="Emoji (E)"
+          >
+            😊
+          </button>
+        </span>
         <!-- The tempo and the beat a new pattern lands on: off the interface, kept for their keys (T taps
              the tempo; 1–4 choose the beat). -->
         <input

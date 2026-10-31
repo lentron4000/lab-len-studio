@@ -297,12 +297,12 @@ body.live .dock > * {
 
 /* ---- Phones and touch screens: no keys to press, little room. */
 @media (max-width: 700px) {
-  /* Name left, Len Studio right: the name stays on one line. */
-  .top {
-    grid-template-columns: 1fr auto;
-  }
+  /* The burger and the number left, Len Studio centred (the series' name, there's no room for). */
   .top h1 {
     white-space: nowrap;
+  }
+  .top .series {
+    display: none;
   }
   .modes {
     border-radius: 16px;
